@@ -17,15 +17,23 @@ import {
   startBattle,
 } from './core/run';
 import { mulberry32 } from './core/rng';
-import { scorePlay } from './core/scoring';
+import { scorePlay, ScoreEvent } from './core/scoring';
 import { TECHNIQUES } from './core/techniques';
+import { sfx } from './sfx';
 
 let s: RunState | null = null;
 let sel: number[] = [];
 let busy = false;
 let techTableOpen = false;
+let playRow: Program[] = []; // 正在结算的程序（视图状态）
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
+
+// 氛围光球
+const bg = document.createElement('div');
+bg.id = 'bg';
+bg.innerHTML = '<div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div>';
+document.body.prepend(bg);
 
 const fmt = (n: number) => n.toLocaleString('zh-CN');
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -37,19 +45,62 @@ function previewCtx(): HookCtx {
     money: s?.money ?? 0,
     implantCount: s?.implants.length ?? 0,
     playedCount: sel.length,
-    rng: mulberry32(0), // 预览用固定种子，混沌义体的实际值以结算为准
+    rng: mulberry32(0), // 预览用固定种子；混沌义体实际值以结算为准
   };
+}
+
+// ---------- 动画工具 ----------
+
+function tick(el: HTMLElement, to: number, ms = 240): void {
+  const from = Number(el.textContent.replace(/,/g, '')) || 0;
+  if (from === to) return;
+  const t0 = performance.now();
+  const step = (t: number) => {
+    const k = Math.min(1, (t - t0) / ms);
+    el.textContent = fmt(Math.round(from + (to - from) * k));
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function bump(el: Element | null): void {
+  if (!el) return;
+  el.classList.remove('bump');
+  void (el as HTMLElement).offsetWidth;
+  el.classList.add('bump');
+}
+
+function shake(big = false): void {
+  const c = big ? 'shake-big' : 'shake';
+  document.body.classList.remove('shake', 'shake-big');
+  void document.body.offsetWidth;
+  document.body.classList.add(c);
+}
+
+function floatText(anchor: Element | null, text: string, cls: string): void {
+  if (!anchor) return;
+  const r = anchor.getBoundingClientRect();
+  const f = document.createElement('span');
+  f.className = `floater ${cls}`;
+  f.textContent = text;
+  f.style.left = `${r.left + r.width / 2}px`;
+  f.style.top = `${r.top - 6}px`;
+  document.body.appendChild(f);
+  setTimeout(() => f.remove(), 900);
 }
 
 // ---------- 组件 ----------
 
 function cardHtml(p: Program, idx: number, selected: boolean): string {
   const info = DISCIPLINE_INFO[p.d];
-  return `<div class="card ${info.cls}${selected ? ' sel' : ''}" data-idx="${idx}">
-    <div class="card-glyph">${info.glyph}</div>
-    <div class="card-val mono">${p.v}</div>
-    <div class="card-disc">${info.zh} · ${info.en}</div>
-  </div>`;
+  const delay = ((idx * 0.53) % 2.2).toFixed(2);
+  return `<div class="slot"><div class="card ${info.cls}${selected ? ' sel' : ''}" data-idx="${idx}" style="animation-delay:-${delay}s">
+    <div class="wm">${info.glyph}</div>
+    <div class="corner">${info.glyph}<span>${info.zh}</span></div>
+    <div class="val mono">${p.v}</div>
+    <div class="tag en">${info.en.toUpperCase()}</div>
+    <div class="vcorner mono">${p.d.slice(0, 2).toUpperCase()}-${String(p.v).padStart(2, '0')}</div>
+  </div></div>`;
 }
 
 function implantHtml(def: ImplantDef, mode: 'owned' | 'offer'): string {
@@ -57,8 +108,8 @@ function implantHtml(def: ImplantDef, mode: 'owned' | 'offer'): string {
     mode === 'owned'
       ? `<button class="btn mini danger" data-sell="${def.id}">卖出 ¤${sellPrice(def)}</button>`
       : `<span class="shop-price">¤${def.cost}</span><button class="btn mini" data-buy="${def.id}">接入</button>`;
-  return `<div class="implant">
-    <div class="implant-name">${def.zh} <span class="en">${def.en}</span></div>
+  return `<div class="implant" data-implant="${def.id}">
+    <div class="implant-name"><span class="badge">${def.zh[0]}</span>${def.zh} <span class="en">${def.en}</span></div>
     <div class="implant-desc">${def.desc}</div>
     <div class="implant-meta"><span class="humcost">人性 −${def.humanity}</span>${meta}</div>
   </div>`;
@@ -69,9 +120,10 @@ function header(): string {
   return `<div class="topbar">
     <span class="logo">零日 <span class="en">ZERO-DAY</span></span>
     <span>区段 <b>${s.wing + 1}</b>/4 · ${s.corp.zh}「${s.corp.fortress}」</span>
-    <span class="money">¤ ${s.money}</span>
+    <span class="money">¤ <b>${s.money}</b></span>
     <span class="humtag">人性 −${s.humanityLoss}</span>
     <span class="seed mono">seed ${s.seed}</span>
+    <button class="btn ghost" id="btn-mute">音效 ${sfx.muted ? '关' : '开'}</button>
   </div>`;
 }
 
@@ -82,13 +134,16 @@ function implantsRow(): string {
 }
 
 function techTableHtml(): string {
-  const rows = TECHNIQUES.map(
-    (t) => `<div class="tech-row">
+  const rows = [...TECHNIQUES]
+    .sort((a, b) => b.rank - a.rank)
+    .map(
+      (t) => `<div class="tech-row">
       <span class="tech-name">${t.zh} <span class="en">${t.en}</span></span>
       <span class="tech-desc">${t.desc}</span>
       <span class="tech-val mono">${t.base} × ${t.eff}</span>
     </div>`,
-  ).join('');
+    )
+    .join('');
   return `<div class="modal-mask" id="modal-mask"><div class="modal">
     <h3>手法表</h3>
     <p class="rule">威力 = 手法基准 + Σ参与程序强度；穿透 = 威力 × 效率。<br>
@@ -101,7 +156,6 @@ function techTableHtml(): string {
 // ---------- 渲染 ----------
 
 function render(): void {
-  document.body.classList.add('in-game');
   if (!s) return renderTitle();
   switch (s.phase) {
     case 'select':
@@ -117,12 +171,14 @@ function render(): void {
 }
 
 function renderTitle(): void {
+  playRow = [];
   app.innerHTML = `<div class="screen title-screen">
     <div class="title-logo">零 日</div>
     <div class="title-sub en">ZERO-DAY · A CARD ROGUELIKE</div>
     <div class="blurb">
-      雾屿城的雨下了三十年。掮客<i>「老蝉」</i>给你转来一单委托：潜进企业数据堡，把核心数据拽出来。<br><br>
-      你的全部本钱，是一套手搓的程序库和几件二手义体。逐层击穿，见好就收——<br>
+      雾屿城的雨下了三十年。掮客<i>「老蝉」</i>给你转来一单委托：<br>
+      潜进企业数据堡，把核心数据拽出来。你的全部本钱，<br>
+      是一套手搓程序库和几件二手义体。逐层击穿，见好就收——<br>
       或者死在分期账单里。
     </div>
     <div class="title-actions">
@@ -143,17 +199,18 @@ function renderTitle(): void {
 
 function renderSelect(): void {
   if (!s) return;
+  playRow = [];
   const cards = s.options
     .map((o, i) => {
       const info = NODE_INFO[o.kind];
       const proto = o.protocol
         ? `<div class="protocol"><b>固执协议 · ${PROTOCOLS[o.protocol].zh}</b><br>${PROTOCOLS[o.protocol].desc}</div>`
         : '';
-      return `<div class="nodecard" data-node="${i}">
+      return `<div class="nodecard k-${o.kind}" data-node="${i}">
         <div class="node-name">${info.zh} <span class="en">${info.en}</span></div>
         <div class="node-th mono">${fmt(o.threshold)}</div>
         <div>击穿所需穿透</div>
-        <div class="node-reward">报酬 ¤${o.reward}${o.kind !== 'core' ? '（高风险高回报，何不看一眼核心？）' : '（含固执协议）'}</div>
+        <div class="node-reward">报酬 ¤${o.reward}</div>
         ${proto}
       </div>`;
     })
@@ -167,30 +224,83 @@ function renderSelect(): void {
   document.querySelectorAll('[data-node]').forEach((el) => {
     el.addEventListener('click', () => {
       if (!s || busy) return;
+      sfx.launch();
       startBattle(s, Number((el as HTMLElement).dataset.node));
       render();
     });
   });
 }
 
-function previewHtml(): string {
-  if (!s || sel.length === 0) return `选择 1–5 张程序，自动匹配最优手法`;
+function scoringPanelHtml(): string {
+  return `<div class="result" id="result">
+    <div class="scoring">
+      <div class="pchip"><span>威力</span><b class="mono" id="pv">–</b></div>
+      <span class="x">×</span>
+      <div class="pchip mult"><span>效率</span><b class="mono" id="ev">–</b></div>
+      <span class="x">=</span>
+      <div class="pchip fin"><b class="mono" id="fv">–</b></div>
+    </div>
+    <div class="result-msg" id="result-msg"></div>
+  </div>`;
+}
+
+function setMsg(html: string): void {
+  const el = document.getElementById('result-msg');
+  if (el) el.innerHTML = html;
+}
+
+function chip(el: HTMLElement, to: number): void {
+  el.textContent = fmt(to);
+  bump(el);
+}
+
+function updatePreview(): void {
+  if (!s) return;
+  const pv = document.getElementById('pv') as HTMLElement;
+  const ev = document.getElementById('ev') as HTMLElement;
+  const fv = document.getElementById('fv') as HTMLElement;
+  const result = document.getElementById('result')!;
+  if (sel.length === 0) {
+    pv.textContent = ev.textContent = fv.textContent = '–';
+    result.classList.remove('live');
+    setMsg('选 1–5 张程序，此处预演穿透');
+    return;
+  }
   const chosen = sel.map((i) => s!.hand[i]);
   const r = scorePlay(chosen, s.implants, previewCtx());
-  if (!r) return `选择 1–5 张程序`;
-  const subsetHint = r.cards.length < sel.length ? `<span class="hint">自动选取 ${r.cards.length} 张参与结算</span>` : '';
-  return `<b>${r.techZh}</b>　<span class="mono">${r.power} × ${r.eff} = <span class="fin">${r.final}</span></span>${subsetHint}`;
+  result.classList.add('live');
+  if (!r) {
+    setMsg('无法构成手法');
+    return;
+  }
+  pv.textContent = fmt(r.power);
+  ev.textContent = fmt(r.eff);
+  fv.textContent = fmt(r.final);
+  const hint = r.cards.length < sel.length ? `<br><span style="opacity:.7">自动选取 ${r.cards.length} 张参与结算</span>` : '';
+  setMsg(`<b>${r.techZh}</b>　预计穿透 ${fmt(r.final)}${hint}`);
 }
 
 function renderBattle(): void {
   if (!s) return;
   const pct = Math.min(100, (s.roundScore / s.threshold) * 100);
   const proto = s.protocol
-    ? `<div class="protocol" style="margin-top:8px"><b>固执协议 · ${PROTOCOLS[s.protocol].zh}</b>　${PROTOCOLS[s.protocol].desc}</div>`
+    ? `<div class="protocol" style="margin-top:10px"><b>固执协议 · ${PROTOCOLS[s.protocol].zh}</b>　${PROTOCOLS[s.protocol].desc}</div>`
     : '';
+  const playRowHtml = playRow
+    .map((p) => {
+      const info = DISCIPLINE_INFO[p.d];
+      return `<div class="slot"><div class="card ${info.cls}" data-pid="${p.id}">
+      <div class="wm">${info.glyph}</div>
+      <div class="corner">${info.glyph}<span>${info.zh}</span></div>
+      <div class="val mono">${p.v}</div>
+      <div class="tag en">${info.en.toUpperCase()}</div>
+      <div class="vcorner mono">${p.d.slice(0, 2).toUpperCase()}-${String(p.v).padStart(2, '0')}</div>
+    </div></div>`;
+    })
+    .join('');
   app.innerHTML = `<div class="screen">
     ${header()}
-    <div class="nodebar">
+    <div class="nodebar ${s.protocol ? 'boss' : ''}">
       <div class="nodebar-head">
         <div class="node-name">${NODE_INFO[s.nodeKind!].zh} <span class="en">${NODE_INFO[s.nodeKind!].en}</span></div>
         <div class="score-line"><b class="mono" id="score-num">${fmt(s.roundScore)}</b> / ${fmt(s.threshold)} 穿透</div>
@@ -204,12 +314,13 @@ function renderBattle(): void {
       ${proto}
     </div>
     ${implantsRow()}
-    <div class="result" id="result">接入完成。等待攻击指令…</div>
+    ${scoringPanelHtml()}
+    <div class="playrow" id="playrow">${playRowHtml}</div>
     <div class="hand" id="hand">${s.hand.map((c, i) => cardHtml(c, i, sel.includes(i))).join('')}</div>
     <div class="actions">
       <button class="btn primary" id="btn-play" ${canPlay(s, sel) ? '' : 'disabled'}>攻击<span class="cnt">${s.playsLeft}/${s.playsMax}</span></button>
       <button class="btn" id="btn-discard" ${canDiscard(s, sel) ? '' : 'disabled'}>重编译<span class="cnt">${s.discardsLeft}</span></button>
-      <div class="preview" id="preview">${previewHtml()}</div>
+      <span class="spacer"></span>
       <button class="btn" id="btn-tech">手法表</button>
     </div>
   </div>${techTableOpen ? techTableHtml() : ''}`;
@@ -219,22 +330,23 @@ function renderBattle(): void {
     const el = (e.target as HTMLElement).closest('.card') as HTMLElement | null;
     if (!el) return;
     const idx = Number(el.dataset.idx);
-    if (sel.includes(idx)) sel = sel.filter((i) => i !== idx);
-    else if (sel.length < 5) sel.push(idx);
+    if (sel.includes(idx)) {
+      sel = sel.filter((i) => i !== idx);
+      sfx.unsel();
+    } else if (sel.length < 5) {
+      sel.push(idx);
+      sfx.select();
+    }
     render();
   });
   document.getElementById('btn-play')!.onclick = () => void attack();
-  document.getElementById('btn-discard')!.onclick = () => {
-    if (!s || busy || !canDiscard(s, sel)) return;
-    discardCards(s, sel);
-    sel = [];
-    render();
-  };
+  document.getElementById('btn-discard')!.onclick = () => void doDiscard();
   document.getElementById('btn-tech')!.onclick = () => {
     techTableOpen = true;
     render();
   };
   bindModal();
+  updatePreview();
 }
 
 function renderShop(): void {
@@ -251,14 +363,15 @@ function renderShop(): void {
   app.innerHTML = `<div class="screen">
     ${header()}
     <div class="shop-banner">
-      击穿确认。赃款到账：<b>¤${cash?.reward ?? 0}</b>　利息 <b>¤${cash?.interest ?? 0}</b>（每 50 新元结余 +10，上限 40）
+      击穿确认。赃款到账：<b>¤${cash?.reward ?? 0}</b>　利息 <b>¤${cash?.interest ?? 0}</b><br>
+      <span style="font-size:12px;opacity:.75">每 50 新元结余 +10 利息，上限 40 —— 攒钱也是一种策略</span>
     </div>
     <div class="h2">已装载义体 — 人性损耗不可逆，卖出只退钱</div>
     <div class="implants">${owned}</div>
     <div class="h2">黑市货架</div>
     <div class="shop-grid"><div class="shop-row">${offers}</div>
       <div class="shop-row">
-        <div class="implant"><div class="implant-name">重掷货架</div>
+        <div class="implant"><div class="implant-name"><span class="badge">掷</span>重掷货架</div>
           <div class="implant-desc">换一批义体。费用每次 +10。</div>
           <div class="implant-meta"><span class="shop-price">¤${s.rerollCost}</span>
           <button class="btn mini" id="btn-reroll" ${s.money >= s.rerollCost ? '' : 'disabled'}>重掷</button></div>
@@ -270,24 +383,25 @@ function renderShop(): void {
   document.querySelectorAll('[data-buy]').forEach((el) => {
     el.addEventListener('click', () => {
       if (!s) return;
-      buyImplant(s, (el as HTMLElement).dataset.buy!);
+      if (buyImplant(s, (el as HTMLElement).dataset.buy!)) sfx.buy();
       render();
     });
   });
   document.querySelectorAll('[data-sell]').forEach((el) => {
     el.addEventListener('click', () => {
       if (!s) return;
-      sellImplant(s, (el as HTMLElement).dataset.sell!);
+      if (sellImplant(s, (el as HTMLElement).dataset.sell!)) sfx.coin();
       render();
     });
   });
   document.getElementById('btn-reroll')!.onclick = () => {
     if (!s) return;
-    reroll(s);
+    if (reroll(s)) sfx.discard();
     render();
   };
   document.getElementById('btn-next')!.onclick = () => {
     if (!s) return;
+    sfx.launch();
     shopContinue(s);
     render();
   };
@@ -330,38 +444,180 @@ function bindModal(): void {
   };
 }
 
-// ---------- 结算动画 ----------
+// ---------- 攻击结算动画 ----------
+
+// 每个事件应把飘字挂在哪：还有后续牌未入账 → 挂当前牌；否则挂对应义体
+function anchorFor(ev: ScoreEvent, idx: number, events: ScoreEvent[], cardEls: HTMLElement[]): Element | null {
+  if (ev.kind === 'card') return cardEls[events.slice(0, idx + 1).filter((e) => e.kind === 'card').length - 1] ?? null;
+  if (ev.kind === 'implant') {
+    const moreCards = events.slice(idx + 1).some((e) => e.kind === 'card');
+    if (moreCards) {
+      const played = events.slice(0, idx + 1).filter((e) => e.kind === 'card').length;
+      return cardEls[Math.max(0, played - 1)] ?? null;
+    }
+    const name = Array.from(document.querySelectorAll('.implant .implant-name'));
+    return name.find((n) => n.textContent?.includes(ev.label))?.closest('.implant') ?? document.querySelector('.implants');
+  }
+  return null;
+}
 
 async function attack(): Promise<void> {
   if (!s || busy || !canPlay(s, sel)) return;
   busy = true;
+  const chosenIdx = sel;
   const before = s.roundScore;
-  const result = play(s, sel);
+  const moneyBefore = s.money;
+  const rects = chosenIdx.map(
+    (i) => document.querySelector(`.hand .card[data-idx="${i}"]`)?.getBoundingClientRect() ?? null,
+  );
+  const chosen = chosenIdx.map((i) => s!.hand[i]);
+  sel = [];
+  playRow = chosen;
+  sfx.launch();
+  const result = play(s, chosenIdx);
   if (!result) {
+    playRow = [];
     busy = false;
     return;
   }
-  const resEl = document.getElementById('result')!;
-  for (const ev of result.events) {
-    const deltas: string[] = [];
-    if (ev.power) deltas.push(`威力 +${ev.power}`);
-    if (ev.eff) deltas.push(`效率 +${ev.eff}`);
-    resEl.innerHTML = `<b>${ev.label}</b>　${deltas.join('　')}　<span class="mono">${ev.powerTotal} × ${ev.effTotal}</span>`;
-    resEl.classList.remove('flash');
-    void resEl.offsetWidth;
-    resEl.classList.add('flash');
-    await sleep(240);
+  renderBattle();
+  // 动画期间分数保持旧值，结算完毕再入账
+  const numNow = document.getElementById('score-num') as HTMLElement;
+  const fillNow = document.getElementById('score-fill') as HTMLElement;
+  numNow.textContent = fmt(before);
+  fillNow.style.width = `${Math.min(100, (before / s.threshold) * 100)}%`;
+  const resultBox = document.getElementById('result')!;
+  resultBox.classList.add('live');
+  setMsg(`<b>${result.techZh}</b>　结算中…`);
+
+  // FLIP：从手牌原位滑入出牌区
+  const fresh = Array.from(document.querySelectorAll('#playrow .card')) as HTMLElement[];
+  fresh.forEach((el, i) => {
+    const r0 = rects[i];
+    if (!r0) return;
+    const r1 = el.getBoundingClientRect();
+    el.style.transition = 'none';
+    el.style.transform = `translate(${r0.left - r1.left}px, ${r0.top - r1.top}px) rotate(${(Math.random() * 6 - 3).toFixed(1)}deg)`;
+    el.style.zIndex = '6';
+  });
+  void document.body.offsetHeight;
+  fresh.forEach((el, i) => {
+    el.style.transition = 'transform 0.3s cubic-bezier(0.2, 0.8, 0.3, 1.15)';
+    el.style.transitionDelay = `${i * 55}ms`;
+    el.style.transform = '';
+  });
+  await sleep(340 + fresh.length * 55);
+  fresh.forEach((el) => {
+    el.style.transition = '';
+    el.style.transitionDelay = '';
+    el.style.zIndex = '';
+  });
+
+  const pv = document.getElementById('pv') as HTMLElement;
+  const evEl = document.getElementById('ev') as HTMLElement;
+  const fv = document.getElementById('fv') as HTMLElement;
+
+  // 逐事件结算：弹卡 / 义体闪光 / 飘字 / 面板滚动
+  for (let i = 0; i < result.events.length; i++) {
+    const ev = result.events[i];
+    const anchor = anchorFor(ev, i, result.events, fresh);
+    if (ev.kind === 'card') {
+      const el = anchor as HTMLElement | null;
+      if (el) {
+        el.classList.remove('hit');
+        void el.offsetWidth;
+        el.classList.add('hit');
+      }
+      sfx.tick(i);
+    } else if (ev.kind === 'implant') {
+      (anchor as HTMLElement | null)?.classList.remove('hit');
+      bump(anchor);
+      (anchor as HTMLElement | null)?.classList.add('hit');
+      sfx.implant();
+    } else {
+      bump(pv.parentElement);
+      bump(evEl.parentElement);
+    }
+    if (ev.power) {
+      chip(pv, ev.powerTotal);
+      floatText(anchor, `+${ev.power} 威力`, 'pow');
+    }
+    if (ev.eff) {
+      chip(evEl, ev.effTotal);
+      floatText(anchor, `+${ev.eff} 效率`, 'eff');
+    }
+    setMsg(`<b>${ev.label}</b>`);
+    await sleep(250);
   }
-  resEl.innerHTML = `<b>${result.techZh}</b>　威力 ${result.power} × 效率 ${result.eff} ＝ <span class="big mono">${fmt(result.final)}</span> 穿透`;
+
+  // 最终一击
+  pv.textContent = fmt(result.power);
+  evEl.textContent = fmt(result.eff);
+  fv.textContent = fmt(result.final);
+  fv.classList.add('slam');
+  sfx.slam();
+  shake();
+  setMsg(`<b>${result.techZh}</b>　穿透 <b style="color:var(--green)">${fmt(result.final)}</b>`);
+  await sleep(500);
+
+  // 入账 + 节点判定
   const num = document.getElementById('score-num')!;
-  const fill = document.getElementById('score-fill')!;
-  num.textContent = fmt(before + result.final);
-  fill.style.width = `${Math.min(100, ((before + result.final) / s.threshold) * 100)}%`;
-  await sleep(650);
+  const fill = document.getElementById('score-fill') as HTMLElement;
+  const total = before + result.final;
+  tick(num, total, 420);
+  fill.style.width = `${Math.min(100, (total / s.threshold) * 100)}%`;
+  await sleep(480);
+
+  const destroyed = total >= s.threshold;
+  if (destroyed) {
+    sfx.destroy();
+    shake(true);
+    setMsg(`<b style="color:var(--green)">节点击穿！</b>`);
+  } else if (s.phase === 'lost') {
+    sfx.hurt();
+    setMsg(`<b style="color:var(--red)">反向追踪完成——连接中断</b>`);
+  } else {
+    setMsg(`剩余攻击窗口 ${s.playsLeft}`);
+  }
+  await sleep(destroyed ? 850 : 600);
+
+  fv.classList.remove('slam');
+  playRow = [];
+  busy = false;
+  const phase = s.phase;
+  render();
+  if (phase === 'shop') {
+    const mEl = document.querySelector('.topbar .money b') as HTMLElement | null;
+    if (mEl && s.money !== moneyBefore) {
+      mEl.textContent = fmt(moneyBefore);
+      tick(mEl, s.money, 520);
+      sfx.coin();
+    }
+  }
+}
+
+async function doDiscard(): Promise<void> {
+  if (!s || busy || !canDiscard(s, sel)) return;
+  busy = true;
+  sfx.discard();
+  const els = sel.map((i) => document.querySelector(`.hand .card[data-idx="${i}"]`));
+  els.forEach((el) => el?.classList.add('discarding'));
+  await sleep(230);
+  discardCards(s, sel);
   sel = [];
   busy = false;
   render();
 }
+
+// ---------- 音效开关（顶栏重渲染不丢） ----------
+
+document.addEventListener('click', (e) => {
+  const t = (e.target as HTMLElement).closest('#btn-mute');
+  if (t) {
+    sfx.toggle();
+    t.textContent = `音效 ${sfx.muted ? '关' : '开'}`;
+  }
+});
 
 // 调试钩子：沿用黑冰 __BIP.game 惯例，控制台/自动化测试经 window.__zd 操作对局
 (window as unknown as { __zd: object }).__zd = {
