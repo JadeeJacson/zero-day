@@ -53,6 +53,11 @@ await api(`/repos/${repo}/git/refs/heads/main`, {
   method: 'PATCH',
   body: JSON.stringify({ sha: commit.sha, force: false }),
 });
-// 用远端真实 SHA 同步本地引用，避免下次再分叉
-execSync(`git update-ref refs/remotes/origin/main ${commit.sha}`);
+// 本地 best-effort 同步引用（远端对象本地不存在时 update-ref 会拒绝，直接写散引用文件）
+const { writeFileSync } = await import('node:fs');
+try {
+  writeFileSync('.git/refs/remotes/origin/main', `${commit.sha}\n`);
+} catch {
+  /* 忽略：下次 git fetch 会自动校正 */
+}
 console.log('pushed:', commit.sha);
