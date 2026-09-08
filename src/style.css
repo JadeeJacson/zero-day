@@ -558,6 +558,13 @@ html, body { height: 100%; overflow: hidden; }
   .counters { margin-top: 7px; }
   .implants { min-height: 60px; max-height: 60px; overflow: hidden; flex-wrap: nowrap; }
   .implant { width: 176px; padding: 8px 10px; }
+  .screen > .implants .implant { height: 60px; display: flex; align-items: center; gap: 8px; padding: 6px 8px; }
+  .screen > .implants .implant-name { min-width: 0; flex: 1 1 auto; }
+  .screen > .implants .implant-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .screen > .implants .implant-desc { display: none; }
+  .screen > .implants .implant-meta { flex: 0 0 auto; margin-top: 0; }
+  .screen > .implants .implant-meta .btn { min-height: 32px; padding: 3px 8px; }
+  .screen > .implants .badge { width: 22px; height: 22px; }
   .implant-desc { min-height: 0; max-height: 20px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .result { min-height: 56px; padding: 7px 12px; }
   .playrow { min-height: 92px; }
@@ -577,8 +584,14 @@ html, body { height: 100%; overflow: hidden; }
   #app { padding-top: 8px; padding-bottom: env(safe-area-inset-bottom); }
   .screen { margin-top: 8px; gap: 7px; }
   .screen > .implants { min-height: 48px; max-height: 48px; overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap; }
-  .screen > .implants .implant { flex: 0 0 164px; padding: 6px 8px; }
-  .screen > .implants .implant-desc { max-height: 17px; min-height: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .screen > .implants .implant { flex: 0 0 164px; height: 48px; display: flex; align-items: center; gap: 6px; padding: 4px 7px; }
+  .screen > .implants .implant-name { min-width: 0; flex: 1 1 auto; }
+  .screen > .implants .implant-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .screen > .implants .implant-desc { display: none; }
+  .screen > .implants .implant-meta { flex: 0 0 auto; margin-top: 0; gap: 4px; }
+  .screen > .implants .implant-meta .btn { min-height: 28px; padding: 2px 6px; font-size: 10px; }
+  .screen > .implants .humcost { font-size: 10px; }
+  .screen > .implants .badge { width: 20px; height: 20px; font-size: 11px; }
   .nodebar { padding: 8px 10px; }
   .progress { margin-top: 7px; height: 8px; }
   .counters { gap: 12px; margin-top: 6px; }
@@ -613,7 +626,8 @@ html, body { height: 100%; overflow: hidden; }
   .screen { margin-top: 4px; gap: 5px; }
   .topbar { padding: 7px 9px; }
   .screen > .implants { min-height: 38px; max-height: 38px; }
-  .screen > .implants .implant { flex-basis: 145px; padding: 4px 7px; }
+  .screen > .implants .implant { flex-basis: 145px; height: 38px; padding: 3px 6px; }
+  .screen > .implants .implant-meta .btn { min-height: 24px; padding: 1px 5px; }
   .nodebar { padding: 6px 9px; }
   .nodebar .protocol { display: none; }
   .result { min-height: 66px; padding: 6px 8px; }
