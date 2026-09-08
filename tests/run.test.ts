@@ -136,6 +136,18 @@ describe('对局流程', () => {
     expect(s.hand.length + s.draw.length + s.discard.length).toBe(total);
   });
 
+  it('整理偏好：新补入手牌后继续沿用上次排序方式', () => {
+    const s = newRun(42);
+    startBattle(s, 0);
+    s.hand = [mk('crack', 2), mk('extract', 9)];
+    s.draw = [mk('stealth', 7), mk('breach', 1)];
+    expect(sortHand(s, 'value')).toBe(true);
+    expect(s.handSortMode).toBe('value');
+    discardCards(s, [1]);
+    expect(s.hand.map((c) => c.v)).toEqual([...s.hand.map((c) => c.v)].sort((a, b) => b - a));
+    expect(s.hand[0].v).toBe(9);
+  });
+
   it('重编译：弃牌计数 -1 并补牌', () => {
     const s = newRun(42);
     startBattle(s, 0);
@@ -152,7 +164,7 @@ describe('对局流程', () => {
     play(s, [0, 1, 2, 3, 4]); // 完全潜袭 (120+25)×8 = 1160 ≥ 300
     expect(s.phase).toBe('shop');
     expect(s.money).toBe(40 + 30); // 利息：floor(40/50)=0
-    expect(s.shopOffers).toHaveLength(2);
+    expect(s.shopOffers).toHaveLength(3);
     expect(s.rerollCost).toBe(50);
   });
 

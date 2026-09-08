@@ -1,3 +1,9 @@
+declare global {
+  interface ImportMeta {
+    readonly env: { readonly DEV: boolean };
+  }
+}
+
 import './style.css';
 import { DISCIPLINES, DISCIPLINE_INFO, Program } from './core/cards';
 import { HookCtx, ImplantDef, sellPrice } from './core/cyberware';
@@ -38,6 +44,31 @@ let tutorialOpen = false;
 let fastAnimations = false;
 let playRow: Program[] = []; // 正在结算的程序（视图状态）
 let statsRecorded = false;
+let pokiLoadingReported = false;
+let pokiGameplayActive = false;
+
+interface PokiSdkLike {
+  gameLoadingFinished?: () => void;
+  gameplayStart?: () => void;
+  gameplayStop?: () => void;
+}
+
+function pokiSdk(): PokiSdkLike | null {
+  return (window as unknown as { PokiSDK?: PokiSdkLike }).PokiSDK ?? null;
+}
+
+function pokiLoadingFinished(): void {
+  if (pokiLoadingReported) return;
+  pokiLoadingReported = true;
+  pokiSdk()?.gameLoadingFinished?.();
+}
+
+function pokiGameplay(start: boolean): void {
+  if (start === pokiGameplayActive) return;
+  pokiGameplayActive = start;
+  if (start) pokiSdk()?.gameplayStart?.();
+  else pokiSdk()?.gameplayStop?.();
+}
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 
@@ -51,6 +82,7 @@ const fmt = (n: number) => n.toLocaleString('zh-CN');
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, fastAnimations ? Math.min(80, ms * 0.22) : ms));
 const TUTORIAL_KEY = 'zero-day-tutorial-v1';
 const STATS_KEY = 'zero-day-run-stats-v1';
+const RUN_SAVE_KEY = 'zero-day-run-v1';
 
 interface RunStats {
   runs: number;
@@ -100,6 +132,35 @@ function rememberTutorial(): void {
     localStorage.setItem(TUTORIAL_KEY, '1');
   } catch {
     // Private browsing can deny storage; the tutorial still closes for this run.
+  }
+}
+
+function saveRun(): void {
+  if (!s || s.phase === 'won' || s.phase === 'lost') return;
+  try {
+    localStorage.setItem(RUN_SAVE_KEY, JSON.stringify(s));
+  } catch {
+    // 存储被禁用时仍允许完整游玩；Poki 无痕窗口尤其常见。
+  }
+}
+
+function loadRun(): RunState | null {
+  try {
+    const raw = localStorage.getItem(RUN_SAVE_KEY);
+    if (!raw) return null;
+    const candidate = JSON.parse(raw) as RunState;
+    if (!candidate || !['select', 'battle', 'shop', 'event'].includes(candidate.phase)) return null;
+    return candidate;
+  } catch {
+    return null;
+  }
+}
+
+function clearSavedRun(): void {
+  try {
+    localStorage.removeItem(RUN_SAVE_KEY);
+  } catch {
+    // ignore storage failures
   }
 }
 
@@ -159,9 +220,10 @@ function floatText(anchor: Element | null, text: string, cls: string): void {
 function cardHtml(p: Program, idx: number, selected: boolean): string {
   const info = DISCIPLINE_INFO[p.d];
   const delay = ((idx * 0.53) % 2.2).toFixed(2);
-  return `<div class="slot"><div class="card ${info.cls}${selected ? ' sel' : ''}" data-idx="${idx}" role="button" tabindex="0" aria-pressed="${selected}" aria-label="${info.zh} 强度 ${p.v}" style="animation-delay:-${delay}s">
+  return `<div class="slot"><div class="card ${info.cls}${selected ? ' sel' : ''}" data-idx="${idx}" role="button" tabindex="0" aria-pressed="${selected}" aria-label="${info.zh} 强度 ${p.v}" title="${info.zh} · 强度 ${p.v}" style="animation-delay:-${delay}s">
     <div class="wm">${info.glyph}</div>
     <div class="corner">${info.glyph}<span>${info.zh}</span></div>
+    <div class="card-sigil">${info.en.slice(0, 3).toUpperCase()}</div>
     <div class="val mono">${p.v}</div>
     <div class="tag en">${info.en.toUpperCase()}</div>
     <div class="vcorner mono">${p.d.slice(0, 2).toUpperCase()}-${String(p.v).padStart(2, '0')}</div>
@@ -259,6 +321,7 @@ function techTableHtml(): string {
 // ---------- 渲染 ----------
 
 function render(): void {
+  if (s && s.phase !== 'won' && s.phase !== 'lost') saveRun();
   if (!s) return renderTitle();
   switch (s.phase) {
     case 'select':
@@ -278,6 +341,7 @@ function render(): void {
 function renderTitle(): void {
   playRow = [];
   const stats = readStats();
+  const saved = loadRun();
   const archetypes = Object.values(ARCHETYPES)
     .map((a) => `<option value="${a.id}">${a.zh} · ${a.desc}</option>`)
     .join('');
@@ -296,6 +360,7 @@ function renderTitle(): void {
     </div>
     <div class="title-actions">
       <button class="btn primary" id="btn-start">开始潜入</button>
+      ${saved ? '<button class="btn" id="btn-continue">继续上次潜入</button>' : ''}
       <button class="btn" id="btn-title-tech">手法表</button>
     </div>
     <div class="title-stats">本机记录：${stats.runs} 局 · ${stats.wins} 次完成 · 最佳资产 ¤${stats.bestMoney} · 最远区段 ${stats.bestWing}/4</div>
@@ -307,8 +372,18 @@ function renderTitle(): void {
     s = newRun(Number.isInteger(parsedSeed) ? parsedSeed : undefined, archetypeId);
     statsRecorded = false;
     tutorialOpen = !tutorialSeen();
+    pokiGameplay(true);
     render();
   };
+  document.getElementById('btn-continue')?.addEventListener('click', () => {
+    const restored = loadRun();
+    if (!restored) return;
+    s = restored;
+    sel = [];
+    statsRecorded = false;
+    tutorialOpen = false;
+    render();
+  });
   document.getElementById('btn-title-tech')!.onclick = () => {
     techTableOpen = !techTableOpen;
     render();
@@ -521,6 +596,7 @@ function renderBattle(): void {
       return `<div class="slot"><div class="card ${info.cls}" data-pid="${p.id}">
       <div class="wm">${info.glyph}</div>
       <div class="corner">${info.glyph}<span>${info.zh}</span></div>
+      <div class="card-sigil">${info.en.slice(0, 3).toUpperCase()}</div>
       <div class="val mono">${p.v}</div>
       <div class="tag en">${info.en.toUpperCase()}</div>
       <div class="vcorner mono">${p.d.slice(0, 2).toUpperCase()}-${String(p.v).padStart(2, '0')}</div>
@@ -549,8 +625,8 @@ function renderBattle(): void {
       <span class="hand-label">程序手牌 <span class="en">HAND</span></span>
       <div class="hand-tools" aria-label="整理手牌">
         <span class="hand-tools-label">整理</span>
-        <button class="btn mini" data-sort-hand="value" title="强度从高到低">强度 ↓</button>
-        <button class="btn mini" data-sort-hand="discipline" title="按纪律分组">纪律</button>
+        <button class="btn mini${s.handSortMode === 'value' ? ' active' : ''}" data-sort-hand="value" title="强度从高到低">强度 ↓</button>
+        <button class="btn mini${s.handSortMode === 'discipline' ? ' active' : ''}" data-sort-hand="discipline" title="按纪律分组">纪律</button>
       </div>
     </div>
     <div class="hand" id="hand" aria-label="程序手牌">${s.hand.map((c, i) => cardHtml(c, i, sel.includes(i))).join('')}</div>
@@ -648,6 +724,8 @@ function renderShop(): void {
 function renderEnd(): void {
   if (!s) return;
   const won = s.phase === 'won';
+  pokiGameplay(false);
+  clearSavedRun();
   recordRun(s);
   const stats = readStats();
   app.innerHTML = `<div class="screen end-screen">
@@ -875,16 +953,29 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// 调试钩子：沿用黑冰 __BIP.game 惯例，控制台/自动化测试经 window.__zd 操作对局
-(window as unknown as { __zd: object }).__zd = {
-  get run() {
-    return s;
-  },
-  render: () => render(),
-  select: (idxs: number[]) => {
-    sel = idxs;
-    render();
-  },
-};
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    saveRun();
+    pokiGameplay(false);
+  } else if (s && s.phase === 'battle') {
+    pokiGameplay(true);
+  }
+});
+window.addEventListener('pagehide', () => saveRun());
+
+// 生产构建不暴露调试入口；仅保留本地开发和自动化调试能力。
+if (import.meta.env.DEV) {
+  (window as unknown as { __zd: object }).__zd = {
+    get run() {
+      return s;
+    },
+    render: () => render(),
+    select: (idxs: number[]) => {
+      sel = idxs;
+      render();
+    },
+  };
+}
 
 render();
+pokiLoadingFinished();

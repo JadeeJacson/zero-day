@@ -21,6 +21,9 @@
 
 html { scrollbar-color: #223152 transparent; }
 
+html, body { width: 100%; min-width: 0; }
+html { overscroll-behavior: none; }
+
 body {
   background:
     radial-gradient(1100px 480px at 50% -12%, #0d1930 0%, transparent 62%),
@@ -30,6 +33,8 @@ body {
   font-family: 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif;
   min-height: 100vh;
   overflow-x: hidden;
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* 网格底纹 + 扫描线 */
@@ -120,6 +125,7 @@ body::after {
 .btn.danger:hover:not(:disabled) { border-color: var(--red); color: var(--red); box-shadow: 0 0 16px rgba(248, 113, 113, 0.28); }
 .btn .cnt { color: var(--dim); font-size: 0.85em; margin-left: 7px; }
 .btn.mini { padding: 4px 12px; font-size: 12px; }
+.btn.mini.active { border-color: var(--cyan); color: var(--cyan); background: rgba(34, 211, 238, 0.12); box-shadow: inset 0 -2px 0 var(--cyan); }
 
 /* ---------- 标题 ---------- */
 .title-screen { text-align: center; padding-top: 7vh; }
@@ -287,6 +293,7 @@ body::after {
 .hand-tools-label { color: var(--dim); font-size: 11px; }
 .hand-tools .btn.mini { min-height: 32px; padding: 4px 10px; }
 .hand { display: flex; justify-content: center; gap: 8px; min-height: 146px; padding: 20px 8px 8px; overflow-x: auto; scrollbar-color: var(--line-hi) transparent; }
+.hand { padding-top: 58px; margin-top: -30px; min-height: 188px; }
 .slot { transition: transform 0.25s ease; }
 .card {
   width: 86px;
@@ -306,11 +313,13 @@ body::after {
   justify-content: center;
   transition: transform 0.2s cubic-bezier(0.34, 1.5, 0.64, 1), box-shadow 0.2s, border-color 0.2s;
   animation: breathe 3.2s ease-in-out infinite alternate;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 @keyframes breathe { from { rotate: -0.5deg; } to { rotate: 0.5deg; } }
 .card:hover { transform: translateY(-12px) scale(1.04); box-shadow: 0 14px 28px rgba(0, 0, 0, 0.6); z-index: 3; }
 .card.sel {
-  transform: translateY(-32px) scale(1.06);
+  transform: translateY(-18px) scale(1.06);
   border-color: var(--cyan);
   box-shadow: 0 0 22px rgba(34, 211, 238, 0.4), 0 16px 30px rgba(0, 0, 0, 0.55);
 }
@@ -318,9 +327,12 @@ body::after {
 .card .wm { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 74px; font-weight: 800; opacity: 0.09; pointer-events: none; }
 .card .corner { position: absolute; top: 7px; left: 9px; font-size: 11px; opacity: 0.85; display: flex; align-items: center; gap: 4px; }
 .card .corner span { font-size: 10px; color: var(--dim); }
+.card-sigil { position: absolute; top: 8px; right: 9px; font: 700 9px/1 ui-monospace, monospace; letter-spacing: .16em; opacity: .7; }
 .card .val { font-size: 42px; font-weight: 800; text-shadow: 0 0 16px currentColor; }
 .card .tag { position: absolute; bottom: 8px; font-size: 10px; letter-spacing: 0.14em; color: var(--dim); }
 .card .vcorner { position: absolute; bottom: 7px; right: 9px; font-size: 9px; color: var(--dim); opacity: 0.75; }
+.card::after { content: 'SELECT'; position: absolute; right: 8px; top: 31px; color: rgba(215,224,240,.36); font: 700 7px/1 ui-monospace, monospace; letter-spacing: .12em; writing-mode: vertical-rl; opacity: 0; transition: opacity .18s; }
+.card.sel::after { opacity: 1; color: var(--cyan); }
 .card.hit { animation: cardPop 0.42s cubic-bezier(0.2, 1.5, 0.4, 1); z-index: 4; }
 @keyframes cardPop {
   30% { transform: scale(1.17) rotate(-2.5deg); box-shadow: 0 0 30px rgba(34, 211, 238, 0.55); }
@@ -474,18 +486,19 @@ body.shake-big #app { animation: shakeB 0.5s ease; }
   .result { flex-direction: column; align-items: stretch; }
   .result-msg { text-align: left; }
   #app { padding: 12px 10px calc(88px + env(safe-area-inset-bottom)); }
-  .topbar { gap: 8px 12px; font-size: 12px; }
-  .seed { margin-left: 0; width: 100%; order: 5; }
+  .topbar { gap: 7px 10px; font-size: 12px; padding: 10px 11px; }
+  .topbar .corp-trait { width: 100%; order: 6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .seed { margin-left: 0; width: auto; order: 5; }
   .nodecard { padding: 16px; }
   .playrow { justify-content: flex-start; min-height: 108px; }
   .hand-head { align-items: flex-start; }
   .hand-tools { margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
   .hand-tools-label { display: none; }
-  .hand { justify-content: flex-start; min-height: 132px; padding-top: 24px; scroll-snap-type: x proximity; }
+  .hand { justify-content: flex-start; min-height: 178px; padding: 56px 8px 10px; margin-top: -30px; scroll-snap-type: x proximity; }
   .hand .slot { flex: 0 0 auto; scroll-snap-align: center; }
   .card { width: 76px; height: 108px; }
   .card .val { font-size: 36px; }
-  .card.sel { transform: translateY(-22px) scale(1.04); }
+  .card.sel { transform: translateY(-14px) scale(1.04); }
   .actions { position: sticky; bottom: 8px; z-index: 10; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: rgba(5, 7, 13, 0.92); backdrop-filter: blur(8px); }
   .actions .spacer { display: none; }
   .actions .btn { flex: 1; min-width: 0; padding-left: 10px; padding-right: 10px; }
@@ -500,8 +513,81 @@ body.shake-big #app { animation: shakeB 0.5s ease; }
   .title-loadout { flex-direction: column; align-items: stretch; max-width: 320px; }
   .title-loadout select, .title-loadout input { width: 100%; }
   .archetype-tag { order: 4; }
+  .playrow { min-height: 104px; padding-top: 4px; }
+  .actions { gap: 8px; }
+  .actions .btn { font-size: 14px; }
+  .result { padding: 9px 10px; gap: 10px; }
+  .scoring { justify-content: space-between; gap: 5px; }
+  .pchip { min-width: 0; flex: 1; padding-left: 7px; padding-right: 7px; }
+  .pchip.fin { min-width: 0; }
+  .pchip b { font-size: 18px; }
+  .pchip.fin b { font-size: 21px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+/* ---------- 单视口发行布局 ----------
+   Poki/移动端不应让外层网页跟着游戏上下滚动；各阶段内容在一个视口内完成。 */
+html, body { height: 100%; overflow: hidden; }
+#app { height: 100dvh; max-height: 100dvh; overflow: hidden; }
+.screen { height: 100%; min-height: 0; overflow: hidden; }
+
+@media (min-width: 761px) {
+  #app { padding-top: 12px; padding-bottom: 14px; }
+  .screen { margin-top: 10px; gap: 8px; }
+  .nodebar { padding: 9px 14px; }
+  .progress { margin-top: 8px; height: 8px; }
+  .counters { margin-top: 7px; }
+  .implants { min-height: 60px; max-height: 60px; overflow: hidden; flex-wrap: nowrap; }
+  .implant { width: 176px; padding: 8px 10px; }
+  .implant-desc { min-height: 0; max-height: 20px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .result { min-height: 56px; padding: 7px 12px; }
+  .playrow { min-height: 92px; }
+  .hand { min-height: 146px; padding-top: 44px; margin-top: -22px; padding-bottom: 5px; }
+  .card { width: 78px; height: 108px; }
+  .card .val { font-size: 38px; }
+  .card.sel { transform: translateY(-12px) scale(1.045); }
+  .actions { min-height: 42px; }
+  .shop-banner { padding: 10px 16px; line-height: 1.55; }
+  .patch-panel { padding: 10px 14px; }
+  .shop-grid { gap: 10px; }
+  .shop-row { gap: 8px; }
+  .event-card { padding: 20px 24px; }
+}
+
+@media (max-width: 760px) {
+  #app { padding-top: 8px; padding-bottom: env(safe-area-inset-bottom); }
+  .screen { margin-top: 8px; gap: 7px; }
+  .screen > .implants { min-height: 48px; max-height: 48px; overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap; }
+  .screen > .implants .implant { flex: 0 0 164px; padding: 6px 8px; }
+  .screen > .implants .implant-desc { max-height: 17px; min-height: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .nodebar { padding: 8px 10px; }
+  .progress { margin-top: 7px; height: 8px; }
+  .counters { gap: 12px; margin-top: 6px; }
+  .playrow { min-height: 78px; padding-top: 2px; }
+  .result { min-height: 78px; }
+  .hand { min-height: 145px; padding-top: 48px; margin-top: -25px; padding-bottom: 6px; }
+  .hand-head { min-height: 28px; }
+  .actions { min-height: 52px; bottom: max(6px, env(safe-area-inset-bottom)); }
+  .event-screen { overflow: hidden; }
+  .event-card { padding: 16px; }
+}
+
+@media (max-width: 760px) and (max-height: 740px) {
+  #app { padding-top: 5px; }
+  .screen { margin-top: 4px; gap: 5px; }
+  .topbar { padding: 7px 9px; }
+  .screen > .implants { min-height: 38px; max-height: 38px; }
+  .screen > .implants .implant { flex-basis: 145px; padding: 4px 7px; }
+  .nodebar { padding: 6px 9px; }
+  .nodebar .protocol { display: none; }
+  .result { min-height: 66px; padding: 6px 8px; }
+  .playrow { min-height: 62px; }
+  .hand { min-height: 118px; padding-top: 34px; margin-top: -17px; }
+  .card { width: 70px; height: 98px; }
+  .card .val { font-size: 33px; }
+  .card.sel { transform: translateY(-9px) scale(1.035); }
+  .actions { min-height: 48px; padding: 5px; }
 }

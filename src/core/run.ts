@@ -135,6 +135,8 @@ export interface RunState {
   usedProtocols: ProtocolId[];
   shopOffers: ImplantDef[];
   rerollCost: number;
+  /** 持续应用于本局新抽入手牌的显示顺序。旧存档缺失时按抽牌顺序兼容。 */
+  handSortMode?: HandSortMode;
   lastResult: ScoreResult | null;
   lastCashout: { reward: number; interest: number } | null;
   event: EventDef | null;
@@ -188,6 +190,7 @@ export function newRun(seed?: number, archetypeId: ArchetypeId = 'balanced'): Ru
     usedProtocols: [],
     shopOffers: [],
     rerollCost: 50,
+    handSortMode: undefined,
     lastResult: null,
     lastCashout: null,
     event: null,
@@ -235,9 +238,15 @@ export function startBattle(s: RunState, optionIdx: number): void {
 
 export function drawTo(s: RunState, n: number): void {
   for (;;) {
-    if (s.hand.length >= n) return;
+    if (s.hand.length >= n) {
+      if (s.handSortMode && s.hand.length > 1) sortHandCards(s.hand, s.handSortMode);
+      return;
+    }
     if (s.draw.length === 0) {
-      if (s.discard.length === 0) return;
+      if (s.discard.length === 0) {
+        if (s.handSortMode && s.hand.length > 1) sortHandCards(s.hand, s.handSortMode);
+        return;
+      }
       s.draw = shuffled(s.discard, s.rng);
       s.discard = [];
     }
@@ -257,17 +266,19 @@ export function canDiscard(s: RunState, sel: number[]): boolean {
 /** Reorder only the visible hand; draw/discard order and deck ownership stay untouched. */
 export function sortHand(s: RunState, mode: HandSortMode): boolean {
   if (s.phase !== 'battle' || s.hand.length < 2) return false;
-  const order = (d: Program['d']) => DISCIPLINES.indexOf(d);
-  s.hand = s.hand
-    .map((card, index) => ({ card, index }))
-    .sort((a, b) => {
-      if (mode === 'value' && a.card.v !== b.card.v) return b.card.v - a.card.v;
-      if (mode === 'discipline' && a.card.d !== b.card.d) return order(a.card.d) - order(b.card.d);
-      if (a.card.v !== b.card.v) return b.card.v - a.card.v;
-      return a.index - b.index;
-    })
-    .map(({ card }) => card);
+  s.handSortMode = mode;
+  sortHandCards(s.hand, mode);
   return true;
+}
+
+function sortHandCards(hand: Program[], mode: HandSortMode): void {
+  const order = (d: Program['d']) => DISCIPLINES.indexOf(d);
+  hand.sort((a, b) => {
+    if (mode === 'value' && a.v !== b.v) return b.v - a.v;
+    if (mode === 'discipline' && a.d !== b.d) return order(a.d) - order(b.d);
+    if (a.v !== b.v) return b.v - a.v;
+    return a.id.localeCompare(b.id);
+  });
 }
 
 function hookCtx(s: RunState, playedCount: number): HookCtx {
@@ -340,7 +351,7 @@ function openShop(s: RunState): void {
 function rollOffers(s: RunState): void {
   const owned = new Set(s.implants.map((i) => i.id));
   const pool = IMPLANTS.filter((i) => !owned.has(i.id));
-  s.shopOffers = shuffled(pool, s.rng).slice(0, 2);
+  s.shopOffers = shuffled(pool, s.rng).slice(0, 3);
 }
 
 export function buyImplant(s: RunState, id: string): boolean {
