@@ -1098,3 +1098,5 @@ if (import.meta.env.DEV) {
   };
 }
 
+render();
+pokiLoadingFinished();
