@@ -517,7 +517,10 @@ body.shake-big #app { animation: shakeB 0.5s ease; }
 
 @media (max-width: 760px) {
   .nodes, .shop-grid { grid-template-columns: 1fr; }
+  .title-screen { padding-top: 3vh; }
   .title-logo { font-size: 46px; }
+  .title-sub { margin-top: 4px; font-size: 11px; }
+  .blurb { margin-top: 16px; max-height: 78px; overflow: hidden; font-size: 12px; line-height: 1.55; }
   .result { flex-direction: column; align-items: stretch; }
   .result-msg { text-align: left; }
   #app { padding: 12px 10px calc(88px + env(safe-area-inset-bottom)); }
@@ -550,8 +553,12 @@ body.shake-big #app { animation: shakeB 0.5s ease; }
   .shop-offers { display: flex; flex-direction: row; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity; padding-bottom: 4px; }
   .shop-offers > .implant { flex: 0 0 min(82vw, 260px); scroll-snap-align: start; }
   .shop-offers > .sold-out { flex: 1 0 100%; }
-  .title-loadout { flex-direction: column; align-items: stretch; max-width: 320px; }
-  .title-loadout select, .title-loadout input { width: 100%; }
+  .title-loadout { flex-direction: column; align-items: stretch; max-width: 320px; margin-top: 12px; gap: 6px; }
+  .title-loadout label { gap: 3px; font-size: 11px; }
+  .title-loadout select, .title-loadout input { width: 100%; min-height: 34px; padding: 6px 8px; }
+  .title-actions { margin-top: 14px; gap: 8px; }
+  .title-actions .btn { min-height: 38px; padding: 7px 12px; }
+  .title-stats { margin-top: 12px; font-size: 10px; }
   .archetype-tag, .deck-rule-tag { order: 4; }
   .loadout-hint { margin-top: 8px; font-size: 11px; line-height: 1.55; }
   .playrow { min-height: 104px; padding-top: 4px; }
