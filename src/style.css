@@ -84,6 +84,7 @@ body::after {
 .money b { color: var(--amber); font-size: 16px; text-shadow: 0 0 10px rgba(251, 191, 36, 0.35); }
 .humtag { color: var(--magenta); }
 .corp-trait { color: var(--green); font-size: 12px; }
+.archetype-tag { color: var(--cyan); font-size: 12px; border: 1px solid rgba(34, 211, 238, 0.28); border-radius: 999px; padding: 3px 8px; }
 .seed { margin-left: auto; color: var(--dim); font-size: 11px; }
 .btn.ghost { background: transparent; padding: 4px 10px; font-size: 12px; }
 
@@ -140,6 +141,11 @@ body::after {
 .blurb { max-width: 540px; margin: 44px auto 0; color: var(--ink); line-height: 2.1; text-align: center; font-size: 15px; }
 .blurb i { color: var(--cyan); font-style: normal; }
 .title-actions { margin-top: 40px; display: flex; gap: 16px; justify-content: center; }
+.title-loadout { margin: 28px auto 0; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.title-loadout label { display: flex; flex-direction: column; gap: 6px; text-align: left; color: var(--dim); font-size: 12px; }
+.title-loadout select, .title-loadout input { min-height: 42px; min-width: 220px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--panel2); }
+.title-loadout input { min-width: 150px; }
+.title-stats { margin-top: 26px; color: var(--dim); font-size: 12px; }
 
 /* ---------- 节点选择 ---------- */
 .h2 { color: var(--dim); font-size: 13px; letter-spacing: 0.28em; }
@@ -379,6 +385,21 @@ body::after {
 .patch-controls select { min-height: 38px; min-width: 155px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: var(--panel2); }
 .patch-hint { margin-top: 9px; color: var(--dim); font-size: 11px; line-height: 1.6; }
 
+/* ---------- 区段事件 ---------- */
+.event-screen { max-width: 820px; margin-left: auto; margin-right: auto; }
+.event-kicker { color: var(--cyan); font-size: 12px; letter-spacing: 0.22em; }
+.event-card { border: 1px solid rgba(34, 211, 238, 0.38); border-radius: 14px; padding: 28px; background: linear-gradient(155deg, rgba(34, 211, 238, 0.1), rgba(13, 19, 34, 0.92) 54%); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.42); }
+.event-title { color: var(--ink); font-size: 30px; font-weight: 800; letter-spacing: 0.12em; }
+.event-text { margin-top: 14px; max-width: 650px; color: var(--dim); line-height: 1.9; }
+.event-choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 26px; }
+.event-choice { display: flex; flex-direction: column; gap: 8px; min-height: 112px; padding: 16px; text-align: left; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: rgba(17, 26, 46, 0.9); cursor: pointer; transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s; }
+.event-choice:hover:not(:disabled) { transform: translateY(-4px); border-color: var(--cyan); box-shadow: 0 12px 26px rgba(0, 0, 0, 0.4); }
+.event-choice:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+.event-choice:disabled { opacity: 0.35; cursor: not-allowed; }
+.event-choice-title { color: var(--cyan); font-size: 16px; font-weight: 700; }
+.event-choice-desc { color: var(--dim); font-size: 13px; line-height: 1.7; }
+.event-foot { color: var(--dim); font-size: 12px; text-align: center; }
+
 /* ---------- 首次引导 ---------- */
 .tutorial-modal { max-width: 720px; }
 .tutorial-modal h3 { font-size: 22px; }
@@ -465,6 +486,12 @@ body.shake-big #app { animation: shakeB 0.5s ease; }
   .patch-controls .btn { flex: 1 1 30%; }
   .patch-controls select { min-width: 0; width: 100%; }
   .tutorial-grid { grid-template-columns: 1fr; }
+  .event-card { padding: 20px; }
+  .event-title { font-size: 24px; }
+  .event-choices { grid-template-columns: 1fr; }
+  .title-loadout { flex-direction: column; align-items: stretch; max-width: 320px; }
+  .title-loadout select, .title-loadout input { width: 100%; }
+  .archetype-tag { order: 4; }
 }
 
 @media (prefers-reduced-motion: reduce) {

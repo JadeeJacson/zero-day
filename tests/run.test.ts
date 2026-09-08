@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { Program } from '../src/core/cards';
+import { IMPLANTS } from '../src/core/cyberware';
 import {
   RunState,
+  ARCHETYPES,
   CORPS,
   WINGS,
   buyImplant,
@@ -12,6 +14,7 @@ import {
   patchDeck,
   play,
   reroll,
+  resolveEvent,
   sellImplant,
   shopContinue,
   startBattle,
@@ -34,6 +37,37 @@ describe('对局流程', () => {
     expect(s.money).toBe(40);
     expect(s.wing).toBe(0);
     expect(s.deck).toHaveLength(40);
+  });
+
+  it('角色开局修正：幽灵多一张手牌，破门手多一个攻击窗口，掮客享受黑市折扣', () => {
+    const ghost = newRun(42, 'ghost');
+    startBattle(ghost, 0);
+    expect(ghost.archetype).toBe(ARCHETYPES.ghost);
+    expect(ghost.handSize).toBe(9);
+    const breaker = newRun(42, 'breaker');
+    startBattle(breaker, 0);
+    expect(breaker.playsMax).toBe(5);
+    const broker = newRun(42, 'broker');
+    broker.phase = 'shop';
+    broker.money = 100;
+    broker.shopOffers = IMPLANTS.slice(0, 1);
+    const offer = broker.shopOffers[0];
+    expect(buyImplant(broker, offer.id)).toBe(true);
+    expect(broker.money).toBe(100 - offer.cost + 10);
+  });
+
+  it('区段事件：商店继续后进入事件，选择后推进区段并记录历史', () => {
+    const s = newRun(42);
+    s.phase = 'shop';
+    s.money = 100;
+    shopContinue(s);
+    expect(s.phase).toBe('event');
+    expect(s.event).not.toBeNull();
+    const eventId = s.event!.id;
+    expect(resolveEvent(s, s.event!.choices[0].id)).toBe(true);
+    expect(s.phase).toBe('select');
+    expect(s.wing).toBe(1);
+    expect(s.eventHistory[0]).toContain(eventId);
   });
 
   it('程序工作台：强化、重写、隔离会持续到下一场战斗', () => {
@@ -156,6 +190,9 @@ describe('对局流程', () => {
     for (const o of s.shopOffers.slice()) buyImplant(s, o.id);
     expect(s.humanityLoss).toBe(15);
     shopContinue(s);
+    expect(s.phase).toBe('event');
+    expect(s.event).not.toBeNull();
+    expect(resolveEvent(s, s.event!.choices[0].id)).toBe(true);
     expect(s.phase).toBe('select');
     startBattle(s, 0);
     expect(s.playsLeft).toBe(3); // 4 - 1
