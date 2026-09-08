@@ -261,12 +261,13 @@ function renderSelect(): void {
   const cards = s.options
     .map((o, i) => {
       const info = NODE_INFO[o.kind];
+      const visibleThreshold = Math.round(o.threshold * (s!.corp.traitId === 'overheat' ? 0.9 : 1));
       const proto = o.protocol
         ? `<div class="protocol"><b>固执协议 · ${PROTOCOLS[o.protocol].zh}</b><br>${PROTOCOLS[o.protocol].desc}</div>`
         : '';
-      return `<div class="nodecard k-${o.kind}" data-node="${i}" role="button" tabindex="0" aria-label="${info.zh}，需要 ${fmt(o.threshold)} 穿透，报酬 ${o.reward}">
+      return `<div class="nodecard k-${o.kind}" data-node="${i}" role="button" tabindex="0" aria-label="${info.zh}，需要 ${fmt(visibleThreshold)} 穿透，报酬 ${o.reward}">
         <div class="node-name">${info.zh} <span class="en">${info.en}</span></div>
-        <div class="node-th mono">${fmt(o.threshold)}</div>
+        <div class="node-th mono">${fmt(visibleThreshold)}</div>
         <div>击穿所需穿透</div>
         <div class="node-reward">报酬 ¤${o.reward}</div>
         ${proto}
