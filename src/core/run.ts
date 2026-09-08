@@ -37,9 +37,9 @@ export const WINGS: WingDef[] = [
 
 // 企业与数据堡名称全部原创
 export const CORPS = [
-  { zh: '玄鸦网络', en: 'Corvid Networks', fortress: '鸦巢' },
-  { zh: '白鲸数据', en: 'Beluga Data', fortress: '鲸腹' },
-  { zh: '赤瓷重工', en: 'Red Kiln Works', fortress: '窑心' },
+  { zh: '玄鸦网络', en: 'Corvid Networks', fortress: '鸦巢', traitId: 'intel', traitZh: '情报优势', traitDesc: '每场多 1 次重编译' },
+  { zh: '白鲸数据', en: 'Beluga Data', fortress: '鲸腹', traitId: 'finance', traitZh: '浮息协议', traitDesc: '利息上限提高至 ¤50' },
+  { zh: '赤瓷重工', en: 'Red Kiln Works', fortress: '窑心', traitId: 'overheat', traitZh: '过热线路', traitDesc: '所有节点阈值降低 10%' },
 ];
 
 export interface NodeOption {
@@ -56,6 +56,8 @@ export interface RunState {
   wing: number; // 0..3
   corp: (typeof CORPS)[number];
   money: number;
+  /** Persistent program library for this run. Battle decks are shuffled from this array. */
+  deck: Program[];
   draw: Program[];
   discard: Program[];
   hand: Program[];
@@ -79,14 +81,22 @@ export interface RunState {
 }
 
 // 人性损耗阶梯（向桌游的 Humanity Cost 机制致意，阈值为原创）：
-// 15 → 攻击窗口 -1；30 → 重编译 -1；45 → 手牌上限 -2
-export const HUMANITY_STEPS = { plays: 15, discards: 30, hand: 45 };
+// 15 → 攻击窗口 -1；22 → 重编译 -1；27 → 手牌上限 -2
+// Five implants can currently add at most 29 humanity loss, so every step must
+// be reachable while still making the last slot meaningfully dangerous.
+export const HUMANITY_STEPS = { plays: 15, discards: 22, hand: 27 };
+
+export const PATCH_COSTS = { boost: 30, rewrite: 40, remove: 50 } as const;
+export const PATCH_MIN_DECK_SIZE = 12;
 
 export const playsCap = (s: RunState) => Math.max(2, 4 - (s.humanityLoss >= HUMANITY_STEPS.plays ? 1 : 0));
 export const discardsCap = (s: RunState) => Math.max(1, 3 - (s.humanityLoss >= HUMANITY_STEPS.discards ? 1 : 0));
 export const handCap = (s: RunState) => Math.max(5, 8 - (s.humanityLoss >= HUMANITY_STEPS.hand ? 2 : 0));
 
 export const interestOf = (money: number) => Math.min(40, Math.floor(money / 50) * 10);
+
+export const interestOfRun = (s: RunState) =>
+  Math.min(s.corp.traitId === 'finance' ? 50 : 40, Math.floor(s.money / 50) * 10);
 
 export function newRun(seed?: number): RunState {
   const s: RunState = {
@@ -96,6 +106,7 @@ export function newRun(seed?: number): RunState {
     wing: 0,
     corp: pick(CORPS, mulberry32(seed ?? Date.now())),
     money: 40,
+    deck: buildCodebase(),
     draw: [],
     discard: [],
     hand: [],
@@ -141,15 +152,17 @@ export function startBattle(s: RunState, optionIdx: number): void {
   s.phase = 'battle';
   s.nodeKind = opt.kind;
   s.protocol = opt.protocol;
-  s.threshold = opt.threshold;
+  s.threshold = Math.round(opt.threshold * (s.corp.traitId === 'overheat' ? 0.9 : 1));
   s.roundScore = 0;
   s.playsMax = playsCap(s);
-  s.discardsMax = discardsCap(s);
+  s.discardsMax = discardsCap(s) + (s.corp.traitId === 'intel' ? 1 : 0);
   s.handSize = handCap(s);
   s.playsLeft = s.playsMax;
   s.discardsLeft = opt.protocol === 'blackout' ? 0 : s.discardsMax;
   s.lastResult = null;
-  s.draw = shuffled(buildCodebase(), s.rng);
+  // The deck is persistent within a run: shop patches finally give the player
+  // a way to pursue a hand/build instead of relying only on random draws.
+  s.draw = shuffled(s.deck, s.rng);
   s.discard = [];
   s.hand = [];
   drawTo(s, s.handSize);
@@ -224,9 +237,9 @@ export function discardCards(s: RunState, sel: number[]): boolean {
 }
 
 function winNode(s: RunState): void {
-  const opt = s.options.find((o) => o.kind === s.nodeKind && o.threshold === s.threshold);
+  const opt = s.options.find((o) => o.kind === s.nodeKind);
   const reward = opt ? opt.reward : 0;
-  const interest = interestOf(s.money);
+  const interest = interestOfRun(s);
   s.money += reward + interest;
   s.lastCashout = { reward, interest };
   if (s.protocol) s.usedProtocols.push(s.protocol);
@@ -275,6 +288,32 @@ export function reroll(s: RunState): boolean {
   s.money -= s.rerollCost;
   s.rerollCost += 10;
   rollOffers(s);
+  return true;
+}
+
+export type PatchKind = keyof typeof PATCH_COSTS;
+
+/** Apply one cheap, run-local program-library modification from the shop. */
+export function patchDeck(
+  s: RunState,
+  kind: PatchKind,
+  targetIndex: number,
+  discipline?: Program['d'],
+): boolean {
+  if (s.phase !== 'shop' || s.money < PATCH_COSTS[kind]) return false;
+  if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= s.deck.length) return false;
+  const target = s.deck[targetIndex];
+  if (kind === 'boost') {
+    if (target.v >= 10) return false;
+    target.v += 1;
+  } else if (kind === 'rewrite') {
+    if (!discipline || target.d === discipline) return false;
+    target.d = discipline;
+  } else {
+    if (s.deck.length <= PATCH_MIN_DECK_SIZE) return false;
+    s.deck.splice(targetIndex, 1);
+  }
+  s.money -= PATCH_COSTS[kind];
   return true;
 }
 
