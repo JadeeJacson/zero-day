@@ -565,7 +565,8 @@ html, body { height: 100%; overflow: hidden; }
   .screen > .implants .implant-meta { flex: 0 0 auto; margin-top: 0; }
   .screen > .implants .implant-meta .btn { min-height: 32px; padding: 3px 8px; }
   .screen > .implants .badge { width: 22px; height: 22px; }
-  .implant-desc { min-height: 0; max-height: 20px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .screen > .implants .implant-desc { min-height: 0; max-height: 20px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .shop-screen .shop-offers .implant-desc { min-height: 0; max-height: none; overflow: visible; white-space: normal; text-overflow: clip; }
   .result { min-height: 56px; padding: 7px 12px; }
   .playrow { min-height: 92px; }
   .hand { min-height: 146px; padding-top: 44px; margin-top: -22px; padding-bottom: 5px; }
@@ -614,9 +615,9 @@ html, body { height: 100%; overflow: hidden; }
   .shop-screen > .h2 { font-size: 11px; letter-spacing: 0.14em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .shop-screen > .implants { min-height: 38px; max-height: 38px; }
   .shop-screen .shop-grid { gap: 5px; }
-  .shop-screen .shop-offers > .implant { height: 112px; min-height: 112px; padding: 6px 8px; }
+  .shop-screen .shop-offers > .implant { height: auto; min-height: 126px; padding: 6px 8px; }
   .shop-screen .shop-offers > .implant .implant-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .shop-screen .shop-offers > .implant .implant-desc { min-height: 0; max-height: 30px; font-size: 11px; line-height: 1.35; overflow: hidden; }
+  .shop-screen .shop-offers > .implant .implant-desc { min-height: 0; max-height: none; font-size: 11px; line-height: 1.35; overflow: visible; white-space: normal; text-overflow: clip; }
   .shop-screen .shop-offers > .implant .implant-meta { margin-top: auto; }
   .shop-screen .shop-offers > .implant .implant-meta .btn { min-height: 30px; padding: 2px 8px; }
   .shop-screen .shop-grid > .shop-row:last-child { flex-direction: row; align-items: stretch; gap: 6px; }
@@ -646,8 +647,8 @@ html, body { height: 100%; overflow: hidden; }
   .shop-screen .patch-controls { margin-top: 4px; }
   .shop-screen .patch-hint { display: none; }
   .shop-screen > .h2 { font-size: 10px; }
-  .shop-screen .shop-offers > .implant { height: 100px; min-height: 100px; }
-  .shop-screen .shop-offers > .implant .implant-desc { max-height: 24px; }
+  .shop-screen .shop-offers > .implant { height: auto; min-height: 112px; }
+  .shop-screen .shop-offers > .implant .implant-desc { max-height: none; }
   .shop-screen .shop-offers > .implant .implant-meta .btn { min-height: 26px; padding: 1px 6px; }
   .shop-screen .shop-grid > .shop-row:last-child .utility-card { min-height: 70px; }
   .shop-screen #btn-next { flex-basis: 102px; min-height: 70px; }
