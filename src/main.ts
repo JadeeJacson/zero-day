@@ -207,6 +207,9 @@ function loadRun(): RunState | null {
     if (!raw) return null;
     const candidate = JSON.parse(raw) as RunState;
     if (!candidate || !['select', 'battle', 'shop', 'event'].includes(candidate.phase)) return null;
+    // Functions are intentionally omitted by JSON.stringify; rebuild the seeded RNG
+    // so a resumed shop/event can continue instead of failing on the next random draw.
+    candidate.rng = mulberry32(candidate.seed);
     return candidate;
   } catch {
     return null;
