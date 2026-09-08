@@ -15,6 +15,8 @@ export interface HookCtx {
   implantCount: number; // 含自身
   playedCount: number; // 本次参与结算的程序张数
   rng: Rng;
+  /** 开局牌库协议对不同纪律牌面强度的计分倍率。 */
+  cardValueMultipliers?: Partial<Record<Program['d'], number>>;
 }
 
 export interface ImplantDef {

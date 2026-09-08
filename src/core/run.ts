@@ -1,7 +1,7 @@
 // 对局状态机：一单委托 = 潜入一家企业，依次打穿 4 个区段。
 // 每个区段在三个候选节点里选一个下手（外围 / 中继 / 核心主机），
 // 击穿任意一个即进入黑市——结构与「每 ante 选一个盲注」同构，但语义全部重写。
-import { DISCIPLINES, Program, buildCodebase } from './cards';
+import { DISCIPLINES, Discipline, Program, buildCodebase } from './cards';
 import { Rng, mulberry32, pick, shuffled } from './rng';
 import { HookCtx, ImplantDef, IMPLANTS } from './cyberware';
 import { ScoreResult, scorePlay } from './scoring';
@@ -10,18 +10,89 @@ import { EventDef, EVENTS } from './events';
 export type Phase = 'select' | 'battle' | 'shop' | 'event' | 'won' | 'lost';
 export type NodeKind = 'perimeter' | 'relay' | 'core';
 export type ProtocolId = 'ironwall' | 'blackout' | 'swarm';
-export type ArchetypeId = 'balanced' | 'ghost' | 'breaker' | 'broker';
+export type ArchetypeId = 'balanced' | 'ghost' | 'breaker' | 'broker' | 'overclocker' | 'vaultbreaker' | 'surgeon';
 export type HandSortMode = 'value' | 'discipline';
+
+export type DeckRuleId = 'standard' | 'red-double' | 'green-zero' | 'violet-green' | 'red-only';
+
+export interface DeckRuleDef {
+  id: DeckRuleId;
+  zh: string;
+  en: string;
+  desc: string;
+  descEn: string;
+  allowed?: Discipline[];
+  cardValueMultipliers?: Partial<Record<Discipline, number>>;
+}
+
+/** 开局牌库协议：同一套战斗系统用不同牌库约束产生完全不同的路线。 */
+export const DECK_RULES: Record<DeckRuleId, DeckRuleDef> = {
+  standard: {
+    id: 'standard',
+    zh: '完整牌库',
+    en: 'Full Library',
+    desc: '40 张四种纪律的完整程序库，没有额外规则。',
+    descEn: 'All 40 programs across four disciplines. No extra rule.',
+  },
+  'red-double': {
+    id: 'red-double',
+    zh: '赤色超载',
+    en: 'Redline Overdrive',
+    desc: '红色【压制】程序的牌面强度计分 ×2，其他牌正常。',
+    descEn: 'Red Breach card strength counts ×2; all other cards are normal.',
+    cardValueMultipliers: { breach: 2 },
+  },
+  'green-zero': {
+    id: 'green-zero',
+    zh: '绿域禁令',
+    en: 'Green Zero',
+    desc: '绿色【提取】程序的牌面强度计为 0，但仍能组成手法。',
+    descEn: 'Green Extract card strength counts as 0, but cards still form techniques.',
+    cardValueMultipliers: { extract: 0 },
+  },
+  'violet-green': {
+    id: 'violet-green',
+    zh: '紫绿双谱',
+    en: 'Violet + Green',
+    desc: '牌库只保留紫色【隐匿】与绿色【提取】，共 20 张。',
+    descEn: 'The library keeps only Violet Stealth and Green Extract: 20 cards.',
+    allowed: ['stealth', 'extract'],
+  },
+  'red-only': {
+    id: 'red-only',
+    zh: '赤色独裁',
+    en: 'Red Only',
+    desc: '牌库只保留红色【压制】程序；红色牌面强度再 ×2，共 10 张。',
+    descEn: 'Keep only Red Breach programs; their card strength counts ×2: 10 cards.',
+    allowed: ['breach'],
+    cardValueMultipliers: { breach: 2 },
+  },
+};
+
+export const isDeckRuleId = (id: unknown): id is DeckRuleId =>
+  typeof id === 'string' && Object.prototype.hasOwnProperty.call(DECK_RULES, id);
+
+export const deckRuleFor = (id?: DeckRuleId | string): DeckRuleDef =>
+  isDeckRuleId(id) ? DECK_RULES[id] : DECK_RULES.standard;
+
+export const buildDeckForRule = (id?: DeckRuleId | string): Program[] => {
+  const rule = deckRuleFor(id);
+  return buildCodebase().filter((card) => !rule.allowed || rule.allowed.includes(card.d));
+};
 
 export interface ArchetypeDef {
   id: ArchetypeId;
   zh: string;
   en: string;
   desc: string;
+  descEn: string;
   startMoney: number;
   playsBonus: number;
   handBonus: number;
+  discardsBonus: number;
   shopDiscount: number;
+  humanityStart: number;
+  thresholdMultiplier: number;
 }
 
 // 角色不是新系统，而是开局的一个小承诺：让同一套 40 张程序库有不同的第一局路线。
@@ -31,40 +102,98 @@ export const ARCHETYPES: Record<ArchetypeId, ArchetypeDef> = {
     zh: '自由潜袭者',
     en: 'Free Runner',
     desc: '没有额外修正，适合第一次了解系统。',
+    descEn: 'No modifiers; ideal for learning the system.',
     startMoney: 40,
     playsBonus: 0,
     handBonus: 0,
+    discardsBonus: 0,
     shopDiscount: 0,
+    humanityStart: 0,
+    thresholdMultiplier: 1,
   },
   ghost: {
     id: 'ghost',
     zh: '幽灵',
     en: 'Ghost',
     desc: '手牌上限 +1；开局资金较少。',
+    descEn: '+1 hand size; less starting money.',
     startMoney: 30,
     playsBonus: 0,
     handBonus: 1,
+    discardsBonus: 0,
     shopDiscount: 0,
+    humanityStart: 0,
+    thresholdMultiplier: 1,
   },
   breaker: {
     id: 'breaker',
     zh: '破门手',
     en: 'Breaker',
     desc: '每场多 1 个攻击窗口；黑市资金较少。',
+    descEn: '+1 attack window each battle; less starting money.',
     startMoney: 25,
     playsBonus: 1,
     handBonus: 0,
+    discardsBonus: 0,
     shopDiscount: 0,
+    humanityStart: 0,
+    thresholdMultiplier: 1,
   },
   broker: {
     id: 'broker',
     zh: '掮客',
     en: 'Broker',
     desc: '义体与重掷费用 −10；开局资金充足。',
+    descEn: 'Implants and rerolls cost −¤10; more starting money.',
     startMoney: 60,
     playsBonus: 0,
     handBonus: 0,
+    discardsBonus: 0,
     shopDiscount: 10,
+    humanityStart: 0,
+    thresholdMultiplier: 1,
+  },
+  overclocker: {
+    id: 'overclocker',
+    zh: '过载竞速',
+    en: 'Overclocker',
+    desc: '攻击窗口 +2、手牌上限 −1；开局人性 −6、资金较少。',
+    descEn: '+2 attacks, −1 hand size; start with −6 humanity and less money.',
+    startMoney: 25,
+    playsBonus: 2,
+    handBonus: -1,
+    discardsBonus: 0,
+    shopDiscount: 0,
+    humanityStart: 6,
+    thresholdMultiplier: 1,
+  },
+  vaultbreaker: {
+    id: 'vaultbreaker',
+    zh: '铁壁破门',
+    en: 'Vaultbreaker',
+    desc: '重编译 +2，但所有节点阈值 +15%。',
+    descEn: '+2 discards, but every node threshold is +15%.',
+    startMoney: 45,
+    playsBonus: 0,
+    handBonus: 0,
+    discardsBonus: 2,
+    shopDiscount: 0,
+    humanityStart: 0,
+    thresholdMultiplier: 1.15,
+  },
+  surgeon: {
+    id: 'surgeon',
+    zh: '义体外科',
+    en: 'Cyber Surgeon',
+    desc: '义体与重掷费用 −20；开局人性 −10。',
+    descEn: 'Implants and rerolls cost −¤20; start with −10 humanity.',
+    startMoney: 70,
+    playsBonus: 0,
+    handBonus: 0,
+    discardsBonus: 0,
+    shopDiscount: 20,
+    humanityStart: 10,
+    thresholdMultiplier: 1,
   },
 };
 
@@ -113,6 +242,7 @@ export interface RunState {
   phase: Phase;
   wing: number; // 0..3
   archetype: ArchetypeDef;
+  deckRuleId: DeckRuleId;
   corp: (typeof CORPS)[number];
   money: number;
   /** Persistent program library for this run. Battle decks are shuffled from this array. */
@@ -161,17 +291,19 @@ export const interestOf = (money: number) => Math.min(40, Math.floor(money / 50)
 export const interestOfRun = (s: RunState) =>
   Math.min(s.corp.traitId === 'finance' ? 50 : 40, Math.floor(s.money / 50) * 10);
 
-export function newRun(seed?: number, archetypeId: ArchetypeId = 'balanced'): RunState {
+export function newRun(seed?: number, archetypeId: ArchetypeId = 'balanced', deckRuleId: DeckRuleId = 'standard'): RunState {
   const archetype = ARCHETYPES[archetypeId] ?? ARCHETYPES.balanced;
+  const normalizedDeckRuleId = isDeckRuleId(deckRuleId) ? deckRuleId : 'standard';
   const s: RunState = {
     seed: seed ?? Math.floor(Math.random() * 2 ** 31),
     rng: () => 0, // 立即替换，占位以满足类型
     phase: 'select',
     wing: 0,
     archetype,
+    deckRuleId: normalizedDeckRuleId,
     corp: pick(CORPS, mulberry32(seed ?? Date.now())),
     money: archetype.startMoney,
-    deck: buildCodebase(),
+    deck: buildDeckForRule(normalizedDeckRuleId),
     draw: [],
     discard: [],
     hand: [],
@@ -181,7 +313,7 @@ export function newRun(seed?: number, archetypeId: ArchetypeId = 'balanced'): Ru
     playsLeft: 4,
     discardsLeft: 3,
     implants: [],
-    humanityLoss: 0,
+    humanityLoss: archetype.humanityStart,
     roundScore: 0,
     threshold: 0,
     nodeKind: null,
@@ -203,14 +335,15 @@ export function newRun(seed?: number, archetypeId: ArchetypeId = 'balanced'): Ru
 
 export function genWingOptions(s: RunState): void {
   const w = WINGS[s.wing];
+  const thresholdMultiplier = s.archetype.thresholdMultiplier ?? 1;
   const pool: ProtocolId[] = (Object.keys(PROTOCOLS) as ProtocolId[]).filter(
     (p) => !s.usedProtocols.includes(p),
   );
   const protocol = pool.length > 0 ? pick(pool, s.rng) : pick(Object.keys(PROTOCOLS) as ProtocolId[], s.rng);
-  const coreThreshold = Math.round((w.base * NODE_INFO.core.mult * (protocol === 'ironwall' ? 1.25 : 1)) / 5) * 5;
+  const coreThreshold = Math.round((w.base * NODE_INFO.core.mult * (protocol === 'ironwall' ? 1.25 : 1) * thresholdMultiplier) / 5) * 5;
   s.options = [
-    { kind: 'perimeter', threshold: w.base * NODE_INFO.perimeter.mult, reward: w.rewards[0], protocol: null },
-    { kind: 'relay', threshold: Math.round((w.base * NODE_INFO.relay.mult) / 5) * 5, reward: w.rewards[1], protocol: null },
+    { kind: 'perimeter', threshold: Math.round((w.base * NODE_INFO.perimeter.mult * thresholdMultiplier) / 5) * 5, reward: w.rewards[0], protocol: null },
+    { kind: 'relay', threshold: Math.round((w.base * NODE_INFO.relay.mult * thresholdMultiplier) / 5) * 5, reward: w.rewards[1], protocol: null },
     { kind: 'core', threshold: coreThreshold, reward: w.rewards[2], protocol },
   ];
 }
@@ -222,9 +355,9 @@ export function startBattle(s: RunState, optionIdx: number): void {
   s.protocol = opt.protocol;
   s.threshold = Math.round(opt.threshold * (s.corp.traitId === 'overheat' ? 0.9 : 1));
   s.roundScore = 0;
-  s.playsMax = playsCap(s) + s.archetype.playsBonus;
-  s.discardsMax = discardsCap(s) + (s.corp.traitId === 'intel' ? 1 : 0);
-  s.handSize = handCap(s) + s.archetype.handBonus;
+  s.playsMax = Math.max(1, playsCap(s) + (s.archetype.playsBonus ?? 0));
+  s.discardsMax = Math.max(0, discardsCap(s) + (s.archetype.discardsBonus ?? 0) + (s.corp.traitId === 'intel' ? 1 : 0));
+  s.handSize = Math.max(4, handCap(s) + (s.archetype.handBonus ?? 0));
   s.playsLeft = s.playsMax;
   s.discardsLeft = opt.protocol === 'blackout' ? 0 : s.discardsMax;
   s.lastResult = null;
@@ -289,6 +422,7 @@ function hookCtx(s: RunState, playedCount: number): HookCtx {
     implantCount: s.implants.length,
     playedCount,
     rng: s.rng,
+    cardValueMultipliers: deckRuleFor(s.deckRuleId).cardValueMultipliers,
   };
 }
 
@@ -405,6 +539,8 @@ export function patchDeck(
     target.v += 1;
   } else if (kind === 'rewrite') {
     if (!discipline || target.d === discipline) return false;
+    const allowed = deckRuleFor(s.deckRuleId).allowed;
+    if (allowed && !allowed.includes(discipline)) return false;
     target.d = discipline;
   } else {
     if (s.deck.length <= PATCH_MIN_DECK_SIZE) return false;

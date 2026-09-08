@@ -10,7 +10,12 @@ import { HookCtx, ImplantDef, sellPrice } from './core/cyberware';
 import {
   ARCHETYPES,
   ArchetypeId,
+  buildDeckForRule,
   canResolveEvent,
+  DECK_RULES,
+  deckRuleFor,
+  DeckRuleId,
+  isDeckRuleId,
   HandSortMode,
   NODE_INFO,
   PATCH_COSTS,
@@ -207,6 +212,10 @@ function loadRun(): RunState | null {
     if (!raw) return null;
     const candidate = JSON.parse(raw) as RunState;
     if (!candidate || !['select', 'battle', 'shop', 'event'].includes(candidate.phase)) return null;
+    // 兼容旧存档：新增的角色与牌库协议字段缺失时回退到标准配置。
+    const savedArchetypeId = candidate.archetype?.id as ArchetypeId;
+    candidate.archetype = ARCHETYPES[savedArchetypeId] ?? ARCHETYPES.balanced;
+    candidate.deckRuleId = isDeckRuleId(candidate.deckRuleId) ? candidate.deckRuleId : 'standard';
     // Functions are intentionally omitted by JSON.stringify; rebuild the seeded RNG
     // so a resumed shop/event can continue instead of failing on the next random draw.
     candidate.rng = mulberry32(candidate.seed);
@@ -232,6 +241,7 @@ function previewCtx(): HookCtx {
     implantCount: s?.implants.length ?? 0,
     playedCount: sel.length,
     rng: mulberry32(0), // 预览用固定种子；混沌义体实际值以结算为准
+    cardValueMultipliers: s ? deckRuleFor(s.deckRuleId).cardValueMultipliers : undefined,
   };
 }
 
@@ -307,12 +317,13 @@ function tutorialHtml(): string {
 
 function patchPanelHtml(): string {
   if (!s) return '';
+  const deckCap = buildDeckForRule(s.deckRuleId).length;
   const cards = s.deck
     .map((p, i) => `<option value="${i}">${String(i + 1).padStart(2, '0')} · ${localized(DISCIPLINE_INFO[p.d])} ${p.v}</option>`)
     .join('');
   const disciplines = DISCIPLINES.map((d) => `<option value="${d}">${localized(DISCIPLINE_INFO[d])}</option>`).join('');
   return `<div class="patch-panel">
-    <div class="patch-head"><span>${t('程序工作台', 'PROGRAM PATCH BAY')}</span><span class="patch-count">${t('牌库', 'DECK')} ${s.deck.length}/40</span></div>
+    <div class="patch-head"><span>${t('程序工作台', 'PROGRAM PATCH BAY')}</span><span class="patch-count">${t('牌库', 'DECK')} ${s.deck.length}/${deckCap}</span></div>
     <div class="patch-controls">
       <label>${t('目标程序', 'TARGET')}<select id="patch-card">${cards}</select></label>
       <label>${t('重写为', 'REWRITE AS')}<select id="patch-discipline">${disciplines}</select></label>
@@ -332,15 +343,23 @@ function implantHtml(def: ImplantDef, mode: 'owned' | 'offer'): string {
       : `<span class="shop-price">¤${displayCost}</span><button class="btn mini" data-buy="${def.id}">${t('接入', 'INSTALL')}</button>`;
   const name = implantName(def);
   const desc = implantDesc(def);
-  return `<div class="implant" data-implant="${def.id}">
+  const ownedAttrs = mode === 'owned'
+    ? ` implant-owned tabindex="0" title="${desc}" aria-label="${name}：${desc}"`
+    : '';
+  const tooltip = mode === 'owned'
+    ? `<div class="implant-tooltip" role="tooltip"><span>${t('能力', 'ABILITY')}</span>${desc}</div>`
+    : '';
+  return `<div class="implant${ownedAttrs}" data-implant="${def.id}">
     <div class="implant-name"><span class="badge">${language === 'zh' ? def.zh[0] : def.en[0]}</span><span class="implant-title">${name}</span></div>
     <div class="implant-desc">${desc}</div>
     <div class="implant-meta"><span class="humcost">${language === 'zh' ? `人性 −${def.humanity}` : `HUM −${def.humanity}`}</span>${meta}</div>
+    ${tooltip}
   </div>`;
 }
 
 function header(): string {
   if (!s) return '';
+  const deckRule = deckRuleFor(s.deckRuleId);
   const fortress = language === 'zh'
     ? s.corp.fortress
     : ({ 鸦巢: 'Crow Nest', 鲸腹: 'Whale Gut', 窑心: 'Kiln Core' } as Record<string, string>)[s.corp.fortress] ?? 'Data Fortress';
@@ -352,11 +371,12 @@ function header(): string {
       };
   const archetypeDesc = language === 'zh'
     ? s.archetype.desc
-    : ({ balanced: 'No modifiers; ideal for learning.', ghost: '+1 hand size; less starting money.', breaker: '+1 attack window; less starting money.', broker: 'Implants and rerolls cost −¤10; more starting money.' } as Record<ArchetypeId, string>)[s.archetype.id];
+    : s.archetype.descEn;
   return `<div class="topbar">
     <span class="logo">${language === 'zh' ? '零日' : 'ZERO-DAY'}</span>
     <span>${t('区段', 'WING')} <b>${s.wing + 1}</b>/4 · ${language === 'zh' ? `${s.corp.zh}「${fortress}」` : `${s.corp.en} “${fortress}”`}</span>
     <span class="archetype-tag" title="${archetypeDesc}">${language === 'zh' ? s.archetype.zh : s.archetype.en}</span>
+    <span class="deck-rule-tag" title="${language === 'zh' ? deckRule.desc : deckRule.descEn}">${language === 'zh' ? deckRule.zh : deckRule.en}</span>
     <span class="corp-trait" title="${corpTrait.desc}">${corpTrait.name}</span>
     <span class="money">¤ <b>${s.money}</b></span>
     <span class="humtag">${language === 'zh' ? `人性 −${s.humanityLoss}` : `HUM −${s.humanityLoss}`}</span>
@@ -419,7 +439,10 @@ function renderTitle(): void {
   const stats = readStats();
   const saved = loadRun();
   const archetypes = Object.values(ARCHETYPES)
-    .map((a) => `<option value="${a.id}">${language === 'zh' ? a.zh : a.en} · ${language === 'zh' ? a.desc : ({ balanced: 'No modifiers; ideal for learning.', ghost: '+1 hand size; less starting money.', breaker: '+1 attack window; less starting money.', broker: 'Implants and rerolls cost −¤10; more starting money.' } as Record<ArchetypeId, string>)[a.id]}</option>`)
+    .map((a) => `<option value="${a.id}">${language === 'zh' ? a.zh : a.en}</option>`)
+    .join('');
+  const deckRules = Object.values(DECK_RULES)
+    .map((rule) => `<option value="${rule.id}">${language === 'zh' ? rule.zh : rule.en}</option>`)
     .join('');
   app.innerHTML = `<div class="screen title-screen">
     <div class="title-logo">${language === 'zh' ? '零 日' : 'ZERO DAY'}</div>
@@ -429,8 +452,10 @@ function renderTitle(): void {
     </div>
     <div class="title-loadout">
       <label>${t('潜袭者', 'RUNNER')}<select id="archetype-input">${archetypes}</select></label>
+      <label>${t('卡组协议', 'DECK PROTOCOL')}<select id="deck-rule-input">${deckRules}</select></label>
       <label>${t('挑战种子', 'CHALLENGE SEED')} <input id="seed-input" type="number" inputmode="numeric" placeholder="${t('随机', 'RANDOM')}"></label>
     </div>
+    <div class="loadout-hint" id="loadout-hint"></div>
     <div class="title-actions">
       <button class="btn primary" id="btn-start">${t('开始潜入', 'START DIVE')}</button>
       ${saved ? `<button class="btn" id="btn-continue">${t('继续上次潜入', 'CONTINUE RUN')}</button>` : ''}
@@ -440,11 +465,25 @@ function renderTitle(): void {
     <div class="title-stats">${language === 'zh' ? `本机记录：${stats.runs} 局 · ${stats.wins} 次完成 · 最佳资产 ¤${stats.bestMoney} · 最远区段 ${stats.bestWing}/4` : `LOCAL RECORDS: ${stats.runs} RUNS · ${stats.wins} CLEARS · BEST ¤${stats.bestMoney} · FARTHEST WING ${stats.bestWing}/4`}</div>
   </div>${techTableOpen ? techTableHtml() : ''}`;
   bindLanguage();
+  const syncLoadoutHint = () => {
+    const archetypeId = (document.getElementById('archetype-input') as HTMLSelectElement).value as ArchetypeId;
+    const deckRuleId = (document.getElementById('deck-rule-input') as HTMLSelectElement).value as DeckRuleId;
+    const archetype = ARCHETYPES[archetypeId] ?? ARCHETYPES.balanced;
+    const deckRule = deckRuleFor(deckRuleId);
+    const hint = document.getElementById('loadout-hint');
+    if (hint) {
+      hint.innerHTML = `<b>${language === 'zh' ? archetype.zh : archetype.en}</b> · ${language === 'zh' ? archetype.desc : archetype.descEn}<br><b>${language === 'zh' ? deckRule.zh : deckRule.en}</b> · ${language === 'zh' ? deckRule.desc : deckRule.descEn}`;
+    }
+  };
+  document.getElementById('archetype-input')?.addEventListener('change', syncLoadoutHint);
+  document.getElementById('deck-rule-input')?.addEventListener('change', syncLoadoutHint);
+  syncLoadoutHint();
   document.getElementById('btn-start')!.onclick = () => {
     const rawSeed = (document.getElementById('seed-input') as HTMLInputElement).value.trim();
     const parsedSeed = rawSeed === '' ? undefined : Number(rawSeed);
     const archetypeId = (document.getElementById('archetype-input') as HTMLSelectElement).value as ArchetypeId;
-    s = newRun(Number.isInteger(parsedSeed) ? parsedSeed : undefined, archetypeId);
+    const deckRuleId = (document.getElementById('deck-rule-input') as HTMLSelectElement).value as DeckRuleId;
+    s = newRun(Number.isInteger(parsedSeed) ? parsedSeed : undefined, archetypeId, deckRuleId);
     statsRecorded = false;
     tutorialOpen = !tutorialSeen();
     pokiGameplay(true);

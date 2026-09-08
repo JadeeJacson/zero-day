@@ -89,7 +89,8 @@ body::after {
 .money b { color: var(--amber); font-size: 16px; text-shadow: 0 0 10px rgba(251, 191, 36, 0.35); }
 .humtag { color: var(--magenta); }
 .corp-trait { color: var(--green); font-size: 12px; }
-.archetype-tag { color: var(--cyan); font-size: 12px; border: 1px solid rgba(34, 211, 238, 0.28); border-radius: 999px; padding: 3px 8px; }
+.archetype-tag, .deck-rule-tag { color: var(--cyan); font-size: 12px; border: 1px solid rgba(34, 211, 238, 0.28); border-radius: 999px; padding: 3px 8px; }
+.deck-rule-tag { color: var(--amber); border-color: rgba(251, 191, 36, 0.3); }
 .seed { margin-left: auto; color: var(--dim); font-size: 11px; }
 .btn.ghost { background: transparent; padding: 4px 10px; font-size: 12px; }
 
@@ -151,6 +152,8 @@ body::after {
 .title-loadout label { display: flex; flex-direction: column; gap: 6px; text-align: left; color: var(--dim); font-size: 12px; }
 .title-loadout select, .title-loadout input { min-height: 42px; min-width: 220px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--panel2); }
 .title-loadout input { min-width: 150px; }
+.loadout-hint { max-width: 720px; margin: 14px auto 0; padding: 9px 13px; border: 1px solid rgba(34, 211, 238, 0.2); border-radius: 8px; color: var(--dim); font-size: 12px; line-height: 1.7; text-align: left; background: rgba(13, 19, 34, 0.55); }
+.loadout-hint b { color: var(--cyan); }
 .title-stats { margin-top: 26px; color: var(--dim); font-size: 12px; }
 
 /* ---------- 节点选择 ---------- */
@@ -252,6 +255,27 @@ body::after {
 .implant-meta .humcost { min-width: 0; white-space: nowrap; }
 .implant-meta .btn { flex: 0 0 auto; min-width: 0; white-space: nowrap; }
 .implant-empty { color: var(--dim); font-size: 12px; align-self: center; border: 1px dashed var(--line); border-radius: 10px; padding: 16px 20px; }
+.implant-owned { position: relative; cursor: help; }
+.implant-owned .implant-tooltip {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  z-index: 80;
+  width: min(280px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border: 1px solid rgba(232, 89, 201, 0.55);
+  border-radius: 8px;
+  background: rgba(8, 12, 24, 0.98);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: normal;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6), 0 0 18px rgba(232, 89, 201, 0.16);
+  pointer-events: none;
+}
+.implant-owned .implant-tooltip span { display: block; margin-bottom: 3px; color: var(--magenta); font-size: 10px; letter-spacing: 0.14em; }
+.implant-owned:hover .implant-tooltip, .implant-owned:focus .implant-tooltip, .implant-owned:focus-within .implant-tooltip { display: block; }
 
 /* ---------- 结算面板（预览 + 动画一体） ---------- */
 .result {
@@ -528,7 +552,8 @@ body.shake-big #app { animation: shakeB 0.5s ease; }
   .shop-offers > .sold-out { flex: 1 0 100%; }
   .title-loadout { flex-direction: column; align-items: stretch; max-width: 320px; }
   .title-loadout select, .title-loadout input { width: 100%; }
-  .archetype-tag { order: 4; }
+  .archetype-tag, .deck-rule-tag { order: 4; }
+  .loadout-hint { margin-top: 8px; font-size: 11px; line-height: 1.55; }
   .playrow { min-height: 104px; padding-top: 4px; }
   .actions { gap: 8px; }
   .actions .btn { font-size: 14px; }
@@ -557,6 +582,7 @@ html, body { height: 100%; overflow: hidden; }
   .progress { margin-top: 8px; height: 8px; }
   .counters { margin-top: 7px; }
   .implants { min-height: 60px; max-height: 60px; overflow: hidden; flex-wrap: nowrap; }
+  .screen > .implants { overflow: visible; }
   .implant { width: 176px; padding: 8px 10px; }
   .screen > .implants .implant { height: 60px; display: flex; align-items: center; gap: 8px; padding: 6px 8px; }
   .screen > .implants .implant-name { min-width: 0; flex: 1 1 auto; }

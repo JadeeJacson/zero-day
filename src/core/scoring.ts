@@ -41,8 +41,9 @@ export function scorePlay(
   push({ kind: 'tech', label: `${tech.zh}（${tech.en}）`, power, eff });
 
   for (const c of cards) {
-    power += c.v;
-    push({ kind: 'card', label: `程序 · 强度 ${c.v}`, power: c.v });
+    const cardPower = c.v * (ctx.cardValueMultipliers?.[c.d] ?? 1);
+    power += cardPower;
+    push({ kind: 'card', label: `程序 · 强度 ${c.v}`, power: cardPower });
     for (const im of implants) {
       if (!im.onCard) continue;
       const fx = im.onCard(c, ctx);

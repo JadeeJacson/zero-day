@@ -57,6 +57,36 @@ describe('对局流程', () => {
     expect(broker.money).toBe(100 - offer.cost + 10);
   });
 
+  it('大胆开局角色：过载竞速、铁壁破门、义体外科各有真实代价', () => {
+    const overclocker = newRun(42, 'overclocker');
+    expect(overclocker.humanityLoss).toBe(6);
+    startBattle(overclocker, 0);
+    expect(overclocker.playsMax).toBe(6);
+    expect(overclocker.handSize).toBe(7);
+
+    const vaultbreaker = newRun(42, 'vaultbreaker');
+    expect(vaultbreaker.options[0].threshold).toBe(345);
+    startBattle(vaultbreaker, 0);
+    expect(vaultbreaker.discardsMax).toBe(5);
+
+    const surgeon = newRun(42, 'surgeon');
+    expect(surgeon.money).toBe(70);
+    expect(surgeon.humanityLoss).toBe(10);
+    expect(surgeon.archetype.shopDiscount).toBe(20);
+  });
+
+  it('开局牌库协议：可以限制牌库并阻止重写成禁用纪律', () => {
+    const dual = newRun(42, 'balanced', 'violet-green');
+    expect(dual.deck).toHaveLength(20);
+    expect(new Set(dual.deck.map((c) => c.d))).toEqual(new Set(['stealth', 'extract']));
+
+    const red = newRun(42, 'balanced', 'red-only');
+    expect(red.deck).toHaveLength(10);
+    red.phase = 'shop';
+    red.money = 100;
+    expect(patchDeck(red, 'rewrite', 0, 'crack')).toBe(false);
+  });
+
   it('区段事件：商店继续后进入事件，选择后推进区段并记录历史', () => {
     const s = newRun(42);
     s.phase = 'shop';

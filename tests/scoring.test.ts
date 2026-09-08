@@ -84,4 +84,22 @@ describe('计分引擎', () => {
     expect(r!.power).toBe(10 + 10 + 15);
     expect(r!.final).toBe(35 * 2);
   });
+
+  it('牌库协议：红色牌面翻倍，绿色牌面归零', () => {
+    const red = scorePlay(
+      [mk('breach', 3), mk('breach', 7)],
+      [],
+      ctx({ cardValueMultipliers: { breach: 2 } }),
+    );
+    expect(red!.power).toBe(10 + 6 + 14);
+    expect(red!.final).toBe(60);
+
+    const green = scorePlay(
+      [mk('extract', 3), mk('extract', 7)],
+      [],
+      ctx({ cardValueMultipliers: { extract: 0 } }),
+    );
+    expect(green!.power).toBe(10);
+    expect(green!.final).toBe(20);
+  });
 });
