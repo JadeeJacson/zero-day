@@ -83,6 +83,7 @@ body::after {
 .logo { color: var(--cyan); font-weight: 800; letter-spacing: 0.22em; text-shadow: 0 0 14px rgba(34, 211, 238, 0.55); }
 .money b { color: var(--amber); font-size: 16px; text-shadow: 0 0 10px rgba(251, 191, 36, 0.35); }
 .humtag { color: var(--magenta); }
+.corp-trait { color: var(--green); font-size: 12px; }
 .seed { margin-left: auto; color: var(--dim); font-size: 11px; }
 .btn.ghost { background: transparent; padding: 4px 10px; font-size: 12px; }
 

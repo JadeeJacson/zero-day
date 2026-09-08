@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { Program } from '../src/core/cards';
 import {
   RunState,
+  CORPS,
   WINGS,
   buyImplant,
   discardCards,
   interestOf,
+  interestOfRun,
   newRun,
   patchDeck,
   play,
@@ -106,6 +108,23 @@ describe('对局流程', () => {
     expect(interestOf(40)).toBe(0);
     expect(interestOf(100)).toBe(20);
     expect(interestOf(500)).toBe(40);
+  });
+
+  it('企业特性：情报增加重编译，白鲸提高利息上限，赤瓷降低阈值', () => {
+    const intel = newRun(42);
+    intel.corp = CORPS.find((c) => c.traitId === 'intel')!;
+    startBattle(intel, 0);
+    expect(intel.discardsMax).toBe(4);
+
+    const finance = newRun(42);
+    finance.corp = CORPS.find((c) => c.traitId === 'finance')!;
+    finance.money = 300;
+    expect(interestOfRun(finance)).toBe(50);
+
+    const overheat = newRun(42);
+    overheat.corp = CORPS.find((c) => c.traitId === 'overheat')!;
+    startBattle(overheat, 0);
+    expect(overheat.threshold).toBe(270);
   });
 
   it('购买义体：扣款、计入人性损耗', () => {

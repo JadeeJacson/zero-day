@@ -6,14 +6,14 @@
 > 一句话：选牌组成「手法」，威力 × 效率击穿节点完整性；义体给你力量，也扣你的人性。
 
 当前版本 **v0.3（迷你整局 + 牌组改造）**：4 区段 × 三选一节点、12 种手法、13 件义体、
-固执协议、利息经济、程序工作台、移动端手牌和胜负面板。设计细节与原创性边界见 [docs/design.md](docs/design.md)。
+固执协议、企业特性、利息经济、程序工作台、移动端手牌和胜负面板。设计细节与原创性边界见 [docs/design.md](docs/design.md)。
 
 ## 运行
 
 ```bash
 npm install
 npm run dev      # 开发
-npm test         # 44 个单元测试
+npm test         # 45 个单元测试
 npm run build    # tsc 检查 + 产物到 dist/（gzip 约 8 KB）
 npm preview      # 预览构建产物
 ```

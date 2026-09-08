@@ -28,6 +28,7 @@ let sel: number[] = [];
 let busy = false;
 let techTableOpen = false;
 let tutorialOpen = false;
+let fastAnimations = false;
 let playRow: Program[] = []; // 正在结算的程序（视图状态）
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -39,7 +40,7 @@ bg.innerHTML = '<div class="orb o1"></div><div class="orb o2"></div><div class="
 document.body.prepend(bg);
 
 const fmt = (n: number) => n.toLocaleString('zh-CN');
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, fastAnimations ? Math.min(80, ms * 0.22) : ms));
 const TUTORIAL_KEY = 'zero-day-tutorial-v1';
 
 function tutorialSeen(): boolean {
@@ -174,9 +175,11 @@ function header(): string {
   return `<div class="topbar">
     <span class="logo">零日 <span class="en">ZERO-DAY</span></span>
     <span>区段 <b>${s.wing + 1}</b>/4 · ${s.corp.zh}「${s.corp.fortress}」</span>
+    <span class="corp-trait" title="${s.corp.traitDesc}">${s.corp.traitZh}</span>
     <span class="money">¤ <b>${s.money}</b></span>
     <span class="humtag">人性 −${s.humanityLoss}</span>
     <span class="seed mono">seed ${s.seed}</span>
+    <button class="btn ghost" id="btn-speed">结算 ${fastAnimations ? '快' : '慢'}</button>
     <button class="btn ghost" id="btn-mute">音效 ${sfx.muted ? '关' : '开'}</button>
   </div>`;
 }
@@ -272,7 +275,7 @@ function renderSelect(): void {
     .join('');
   app.innerHTML = `<div class="screen">
     ${header()}
-    <div class="h2">选择下手节点 — 打穿任意一个即可深入</div>
+    <div class="h2">选择下手节点 — 打穿任意一个即可深入 · ${s.corp.traitDesc}</div>
     <div class="nodes">${cards}</div>
     ${implantsRow()}
   </div>${tutorialOpen ? tutorialHtml() : ''}`;
@@ -709,6 +712,11 @@ document.addEventListener('click', (e) => {
   if (t) {
     sfx.toggle();
     t.textContent = `音效 ${sfx.muted ? '关' : '开'}`;
+  }
+  const speed = (e.target as HTMLElement).closest('#btn-speed');
+  if (speed) {
+    fastAnimations = !fastAnimations;
+    speed.textContent = `结算 ${fastAnimations ? '快' : '慢'}`;
   }
 });
 

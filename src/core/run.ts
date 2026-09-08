@@ -37,9 +37,9 @@ export const WINGS: WingDef[] = [
 
 // 企业与数据堡名称全部原创
 export const CORPS = [
-  { zh: '玄鸦网络', en: 'Corvid Networks', fortress: '鸦巢' },
-  { zh: '白鲸数据', en: 'Beluga Data', fortress: '鲸腹' },
-  { zh: '赤瓷重工', en: 'Red Kiln Works', fortress: '窑心' },
+  { zh: '玄鸦网络', en: 'Corvid Networks', fortress: '鸦巢', traitId: 'intel', traitZh: '情报优势', traitDesc: '每场多 1 次重编译' },
+  { zh: '白鲸数据', en: 'Beluga Data', fortress: '鲸腹', traitId: 'finance', traitZh: '浮息协议', traitDesc: '利息上限提高至 ¤50' },
+  { zh: '赤瓷重工', en: 'Red Kiln Works', fortress: '窑心', traitId: 'overheat', traitZh: '过热线路', traitDesc: '所有节点阈值降低 10%' },
 ];
 
 export interface NodeOption {
@@ -95,6 +95,9 @@ export const handCap = (s: RunState) => Math.max(5, 8 - (s.humanityLoss >= HUMAN
 
 export const interestOf = (money: number) => Math.min(40, Math.floor(money / 50) * 10);
 
+export const interestOfRun = (s: RunState) =>
+  Math.min(s.corp.traitId === 'finance' ? 50 : 40, Math.floor(s.money / 50) * 10);
+
 export function newRun(seed?: number): RunState {
   const s: RunState = {
     seed: seed ?? Math.floor(Math.random() * 2 ** 31),
@@ -149,10 +152,10 @@ export function startBattle(s: RunState, optionIdx: number): void {
   s.phase = 'battle';
   s.nodeKind = opt.kind;
   s.protocol = opt.protocol;
-  s.threshold = opt.threshold;
+  s.threshold = Math.round(opt.threshold * (s.corp.traitId === 'overheat' ? 0.9 : 1));
   s.roundScore = 0;
   s.playsMax = playsCap(s);
-  s.discardsMax = discardsCap(s);
+  s.discardsMax = discardsCap(s) + (s.corp.traitId === 'intel' ? 1 : 0);
   s.handSize = handCap(s);
   s.playsLeft = s.playsMax;
   s.discardsLeft = opt.protocol === 'blackout' ? 0 : s.discardsMax;
@@ -234,9 +237,9 @@ export function discardCards(s: RunState, sel: number[]): boolean {
 }
 
 function winNode(s: RunState): void {
-  const opt = s.options.find((o) => o.kind === s.nodeKind && o.threshold === s.threshold);
+  const opt = s.options.find((o) => o.kind === s.nodeKind);
   const reward = opt ? opt.reward : 0;
-  const interest = interestOf(s.money);
+  const interest = interestOfRun(s);
   s.money += reward + interest;
   s.lastCashout = { reward, interest };
   if (s.protocol) s.usedProtocols.push(s.protocol);
