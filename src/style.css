@@ -281,6 +281,11 @@ body::after {
 /* ---------- 手牌 / 出牌区 ---------- */
 .playrow { display: flex; gap: 10px; justify-content: center; min-height: 118px; align-items: flex-end; overflow-x: auto; padding: 4px 2px; }
 .playrow .slot { animation: screenIn 0.01s both; }
+.hand-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--dim); font-size: 13px; }
+.hand-label { letter-spacing: 0.18em; }
+.hand-tools { display: flex; align-items: center; gap: 7px; }
+.hand-tools-label { color: var(--dim); font-size: 11px; }
+.hand-tools .btn.mini { min-height: 32px; padding: 4px 10px; }
 .hand { display: flex; justify-content: center; gap: 8px; min-height: 146px; padding: 20px 8px 8px; overflow-x: auto; scrollbar-color: var(--line-hi) transparent; }
 .slot { transition: transform 0.25s ease; }
 .card {
@@ -473,6 +478,9 @@ body.shake-big #app { animation: shakeB 0.5s ease; }
   .seed { margin-left: 0; width: 100%; order: 5; }
   .nodecard { padding: 16px; }
   .playrow { justify-content: flex-start; min-height: 108px; }
+  .hand-head { align-items: flex-start; }
+  .hand-tools { margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+  .hand-tools-label { display: none; }
   .hand { justify-content: flex-start; min-height: 132px; padding-top: 24px; scroll-snap-type: x proximity; }
   .hand .slot { flex: 0 0 auto; scroll-snap-align: center; }
   .card { width: 76px; height: 108px; }
