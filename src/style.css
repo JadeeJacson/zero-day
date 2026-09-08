@@ -614,7 +614,11 @@ html, body { height: 100%; overflow: hidden; }
   .shop-screen > .h2 { font-size: 11px; letter-spacing: 0.14em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .shop-screen > .implants { min-height: 38px; max-height: 38px; }
   .shop-screen .shop-grid { gap: 5px; }
-  .shop-screen .shop-offers > .implant { min-height: 106px; }
+  .shop-screen .shop-offers > .implant { height: 112px; min-height: 112px; padding: 6px 8px; }
+  .shop-screen .shop-offers > .implant .implant-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shop-screen .shop-offers > .implant .implant-desc { min-height: 0; max-height: 30px; font-size: 11px; line-height: 1.35; overflow: hidden; }
+  .shop-screen .shop-offers > .implant .implant-meta { margin-top: auto; }
+  .shop-screen .shop-offers > .implant .implant-meta .btn { min-height: 30px; padding: 2px 8px; }
   .shop-screen .shop-grid > .shop-row:last-child { flex-direction: row; align-items: stretch; gap: 6px; }
   .shop-screen .shop-grid > .shop-row:last-child .utility-card { flex: 1 1 auto; min-width: 0; min-height: 78px; }
   .shop-screen #btn-next { flex: 0 0 112px; min-height: 78px; padding: 6px 8px; }
@@ -637,7 +641,14 @@ html, body { height: 100%; overflow: hidden; }
   .card .val { font-size: 33px; }
   .card.sel { transform: translateY(-9px) scale(1.035); }
   .actions { min-height: 48px; padding: 5px; }
-  .shop-screen .shop-offers > .implant { min-height: 100px; }
+  .shop-screen .shop-banner { padding: 5px 8px; line-height: 1.2; }
+  .shop-screen .patch-panel { padding: 5px 7px; }
+  .shop-screen .patch-controls { margin-top: 4px; }
+  .shop-screen .patch-hint { display: none; }
+  .shop-screen > .h2 { font-size: 10px; }
+  .shop-screen .shop-offers > .implant { height: 100px; min-height: 100px; }
+  .shop-screen .shop-offers > .implant .implant-desc { max-height: 24px; }
+  .shop-screen .shop-offers > .implant .implant-meta .btn { min-height: 26px; padding: 1px 6px; }
   .shop-screen .shop-grid > .shop-row:last-child .utility-card { min-height: 70px; }
   .shop-screen #btn-next { flex-basis: 102px; min-height: 70px; }
 }
