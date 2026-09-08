@@ -2,6 +2,9 @@ import './style.css';
 import { DISCIPLINES, DISCIPLINE_INFO, Program } from './core/cards';
 import { HookCtx, ImplantDef, sellPrice } from './core/cyberware';
 import {
+  ARCHETYPES,
+  ArchetypeId,
+  canResolveEvent,
   NODE_INFO,
   PATCH_COSTS,
   PROTOCOLS,
@@ -14,7 +17,9 @@ import {
   play,
   patchDeck,
   reroll,
+  resolveEvent,
   sellImplant,
+  shopPrice,
   shopContinue,
   startBattle,
 } from './core/run';
@@ -30,6 +35,7 @@ let techTableOpen = false;
 let tutorialOpen = false;
 let fastAnimations = false;
 let playRow: Program[] = []; // 正在结算的程序（视图状态）
+let statsRecorded = false;
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 
@@ -42,6 +48,42 @@ document.body.prepend(bg);
 const fmt = (n: number) => n.toLocaleString('zh-CN');
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, fastAnimations ? Math.min(80, ms * 0.22) : ms));
 const TUTORIAL_KEY = 'zero-day-tutorial-v1';
+const STATS_KEY = 'zero-day-run-stats-v1';
+
+interface RunStats {
+  runs: number;
+  wins: number;
+  bestMoney: number;
+  bestWing: number;
+}
+
+function readStats(): RunStats {
+  const fallback = { runs: 0, wins: 0, bestMoney: 0, bestWing: 0 };
+  try {
+    const raw = localStorage.getItem(STATS_KEY);
+    if (!raw) return fallback;
+    return { ...fallback, ...JSON.parse(raw) } as RunStats;
+  } catch {
+    return fallback;
+  }
+}
+
+function recordRun(run: RunState): void {
+  if (statsRecorded) return;
+  statsRecorded = true;
+  const stats = readStats();
+  const next = {
+    runs: stats.runs + 1,
+    wins: stats.wins + (run.phase === 'won' ? 1 : 0),
+    bestMoney: Math.max(stats.bestMoney, run.money),
+    bestWing: Math.max(stats.bestWing, run.wing + 1),
+  };
+  try {
+    localStorage.setItem(STATS_KEY, JSON.stringify(next));
+  } catch {
+    // Private browsing can deny storage; the run result itself is still visible.
+  }
+}
 
 function tutorialSeen(): boolean {
   try {
@@ -159,10 +201,11 @@ function patchPanelHtml(): string {
 }
 
 function implantHtml(def: ImplantDef, mode: 'owned' | 'offer'): string {
+  const displayCost = mode === 'offer' && s ? shopPrice(s, def.cost) : def.cost;
   const meta =
     mode === 'owned'
       ? `<button class="btn mini danger" data-sell="${def.id}">卖出 ¤${sellPrice(def)}</button>`
-      : `<span class="shop-price">¤${def.cost}</span><button class="btn mini" data-buy="${def.id}">接入</button>`;
+      : `<span class="shop-price">¤${displayCost}</span><button class="btn mini" data-buy="${def.id}">接入</button>`;
   return `<div class="implant" data-implant="${def.id}">
     <div class="implant-name"><span class="badge">${def.zh[0]}</span>${def.zh} <span class="en">${def.en}</span></div>
     <div class="implant-desc">${def.desc}</div>
@@ -175,6 +218,7 @@ function header(): string {
   return `<div class="topbar">
     <span class="logo">零日 <span class="en">ZERO-DAY</span></span>
     <span>区段 <b>${s.wing + 1}</b>/4 · ${s.corp.zh}「${s.corp.fortress}」</span>
+    <span class="archetype-tag" title="${s.archetype.desc}">${s.archetype.zh}</span>
     <span class="corp-trait" title="${s.corp.traitDesc}">${s.corp.traitZh}</span>
     <span class="money">¤ <b>${s.money}</b></span>
     <span class="humtag">人性 −${s.humanityLoss}</span>
@@ -221,6 +265,8 @@ function render(): void {
       return renderBattle();
     case 'shop':
       return renderShop();
+    case 'event':
+      return renderEvent();
     case 'won':
     case 'lost':
       return renderEnd();
@@ -229,6 +275,10 @@ function render(): void {
 
 function renderTitle(): void {
   playRow = [];
+  const stats = readStats();
+  const archetypes = Object.values(ARCHETYPES)
+    .map((a) => `<option value="${a.id}">${a.zh} · ${a.desc}</option>`)
+    .join('');
   app.innerHTML = `<div class="screen title-screen">
     <div class="title-logo">零 日</div>
     <div class="title-sub en">ZERO-DAY · A CARD ROGUELIKE</div>
@@ -238,13 +288,22 @@ function renderTitle(): void {
       是一套手搓程序库和几件二手义体。逐层击穿，见好就收——<br>
       或者死在分期账单里。
     </div>
+    <div class="title-loadout">
+      <label>潜袭者<select id="archetype-input">${archetypes}</select></label>
+      <label>挑战 seed <input id="seed-input" type="number" inputmode="numeric" placeholder="随机"></label>
+    </div>
     <div class="title-actions">
       <button class="btn primary" id="btn-start">开始潜入</button>
       <button class="btn" id="btn-title-tech">手法表</button>
     </div>
+    <div class="title-stats">本机记录：${stats.runs} 局 · ${stats.wins} 次完成 · 最佳资产 ¤${stats.bestMoney} · 最远区段 ${stats.bestWing}/4</div>
   </div>${techTableOpen ? techTableHtml() : ''}`;
   document.getElementById('btn-start')!.onclick = () => {
-    s = newRun();
+    const rawSeed = (document.getElementById('seed-input') as HTMLInputElement).value.trim();
+    const parsedSeed = rawSeed === '' ? undefined : Number(rawSeed);
+    const archetypeId = (document.getElementById('archetype-input') as HTMLSelectElement).value as ArchetypeId;
+    s = newRun(Number.isInteger(parsedSeed) ? parsedSeed : undefined, archetypeId);
+    statsRecorded = false;
     tutorialOpen = !tutorialSeen();
     render();
   };
@@ -295,6 +354,38 @@ function renderSelect(): void {
     });
   });
   bindTutorial();
+}
+
+function renderEvent(): void {
+  if (!s || !s.event) return;
+  const event = s.event;
+  const choices = event.choices
+    .map(
+      (choice) => `<button class="event-choice" data-event-choice="${choice.id}" ${canResolveEvent(s!, choice.id) ? '' : 'disabled'}>
+        <span class="event-choice-title">${choice.title}</span>
+        <span class="event-choice-desc">${choice.desc}</span>
+      </button>`,
+    )
+    .join('');
+  app.innerHTML = `<div class="screen event-screen">
+    ${header()}
+    <div class="event-kicker en">INTERCEPTED SIGNAL · ${event.en}</div>
+    <div class="event-card">
+      <div class="event-title">${event.title}</div>
+      <p class="event-text">${event.text}</p>
+      <div class="event-choices">${choices}</div>
+    </div>
+    <div class="event-foot">区段间事件 · 选择会影响资金、人性或程序库 · 当前牌库 ${s.deck.length} 张</div>
+  </div>`;
+  document.querySelectorAll('[data-event-choice]').forEach((el) => {
+    el.addEventListener('click', () => {
+      if (!s) return;
+      const choiceId = (el as HTMLElement).dataset.eventChoice;
+      if (!choiceId || !resolveEvent(s, choiceId)) return;
+      sfx.launch();
+      render();
+    });
+  });
 }
 
 function scoringPanelHtml(): string {
@@ -447,9 +538,9 @@ function renderShop(): void {
     <div class="shop-grid"><div class="shop-row">${offers}</div>
       <div class="shop-row">
         <div class="implant"><div class="implant-name"><span class="badge">掷</span>重掷货架</div>
-          <div class="implant-desc">换一批义体。费用每次 +10。</div>
-          <div class="implant-meta"><span class="shop-price">¤${s.rerollCost}</span>
-          <button class="btn mini" id="btn-reroll" ${s.money >= s.rerollCost ? '' : 'disabled'}>重掷</button></div>
+          <div class="implant-desc">换一批义体。费用每次 +10；掮客折扣同样生效。</div>
+          <div class="implant-meta"><span class="shop-price">¤${shopPrice(s, s.rerollCost)}</span>
+          <button class="btn mini" id="btn-reroll" ${s.money >= shopPrice(s, s.rerollCost) ? '' : 'disabled'}>重掷</button></div>
         </div>
         <button class="btn primary" id="btn-next" style="margin-top:auto">继续深入 ↓</button>
       </div>
@@ -497,6 +588,8 @@ function renderShop(): void {
 function renderEnd(): void {
   if (!s) return;
   const won = s.phase === 'won';
+  recordRun(s);
+  const stats = readStats();
   app.innerHTML = `<div class="screen end-screen">
     <div class="end-title ${won ? 'won' : 'lost'}">${won ? '全身而退' : '连接中断'}</div>
     <div class="end-text">${
@@ -505,7 +598,8 @@ function renderEnd(): void {
         : '反向追踪锁定了你的接入点。权限被吊销，义体被远程锁死，<br>而欠掮客的那笔账，才刚刚开始计息。'
     }</div>
     <div class="end-stats">
-      最终资产 <b>¤${s.money}</b> ｜ 人性损耗 <b>−${s.humanityLoss}</b> ｜ 到达区段 <b>${s.wing + 1}/4</b> ｜ seed <b>${s.seed}</b>
+      最终资产 <b>¤${s.money}</b> ｜ 人性损耗 <b>−${s.humanityLoss}</b> ｜ 到达区段 <b>${s.wing + 1}/4</b> ｜ seed <b>${s.seed}</b><br>
+      ${s.archetype.zh} · 事件选择 ${s.eventHistory.length} 次 · 本机胜率 ${stats.wins}/${stats.runs}
     </div>
     <button class="btn primary" id="btn-restart">再潜一次</button>
   </div>`;

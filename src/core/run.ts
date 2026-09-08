@@ -5,10 +5,67 @@ import { Program, buildCodebase } from './cards';
 import { Rng, mulberry32, pick, shuffled } from './rng';
 import { HookCtx, ImplantDef, IMPLANTS } from './cyberware';
 import { ScoreResult, scorePlay } from './scoring';
+import { EventDef, EVENTS } from './events';
 
-export type Phase = 'select' | 'battle' | 'shop' | 'won' | 'lost';
+export type Phase = 'select' | 'battle' | 'shop' | 'event' | 'won' | 'lost';
 export type NodeKind = 'perimeter' | 'relay' | 'core';
 export type ProtocolId = 'ironwall' | 'blackout' | 'swarm';
+export type ArchetypeId = 'balanced' | 'ghost' | 'breaker' | 'broker';
+
+export interface ArchetypeDef {
+  id: ArchetypeId;
+  zh: string;
+  en: string;
+  desc: string;
+  startMoney: number;
+  playsBonus: number;
+  handBonus: number;
+  shopDiscount: number;
+}
+
+// 角色不是新系统，而是开局的一个小承诺：让同一套 40 张程序库有不同的第一局路线。
+export const ARCHETYPES: Record<ArchetypeId, ArchetypeDef> = {
+  balanced: {
+    id: 'balanced',
+    zh: '自由潜袭者',
+    en: 'Free Runner',
+    desc: '没有额外修正，适合第一次了解系统。',
+    startMoney: 40,
+    playsBonus: 0,
+    handBonus: 0,
+    shopDiscount: 0,
+  },
+  ghost: {
+    id: 'ghost',
+    zh: '幽灵',
+    en: 'Ghost',
+    desc: '手牌上限 +1；开局资金较少。',
+    startMoney: 30,
+    playsBonus: 0,
+    handBonus: 1,
+    shopDiscount: 0,
+  },
+  breaker: {
+    id: 'breaker',
+    zh: '破门手',
+    en: 'Breaker',
+    desc: '每场多 1 个攻击窗口；黑市资金较少。',
+    startMoney: 25,
+    playsBonus: 1,
+    handBonus: 0,
+    shopDiscount: 0,
+  },
+  broker: {
+    id: 'broker',
+    zh: '掮客',
+    en: 'Broker',
+    desc: '义体与重掷费用 −10；开局资金充足。',
+    startMoney: 60,
+    playsBonus: 0,
+    handBonus: 0,
+    shopDiscount: 10,
+  },
+};
 
 export const PROTOCOLS: Record<ProtocolId, { zh: string; en: string; desc: string }> = {
   ironwall: { zh: '铁幕协议', en: 'Iron Wall', desc: '核心主机阈值额外 ×1.25' },
@@ -54,6 +111,7 @@ export interface RunState {
   rng: Rng;
   phase: Phase;
   wing: number; // 0..3
+  archetype: ArchetypeDef;
   corp: (typeof CORPS)[number];
   money: number;
   /** Persistent program library for this run. Battle decks are shuffled from this array. */
@@ -78,6 +136,8 @@ export interface RunState {
   rerollCost: number;
   lastResult: ScoreResult | null;
   lastCashout: { reward: number; interest: number } | null;
+  event: EventDef | null;
+  eventHistory: string[];
 }
 
 // 人性损耗阶梯（向桌游的 Humanity Cost 机制致意，阈值为原创）：
@@ -98,14 +158,16 @@ export const interestOf = (money: number) => Math.min(40, Math.floor(money / 50)
 export const interestOfRun = (s: RunState) =>
   Math.min(s.corp.traitId === 'finance' ? 50 : 40, Math.floor(s.money / 50) * 10);
 
-export function newRun(seed?: number): RunState {
+export function newRun(seed?: number, archetypeId: ArchetypeId = 'balanced'): RunState {
+  const archetype = ARCHETYPES[archetypeId] ?? ARCHETYPES.balanced;
   const s: RunState = {
     seed: seed ?? Math.floor(Math.random() * 2 ** 31),
     rng: () => 0, // 立即替换，占位以满足类型
     phase: 'select',
     wing: 0,
+    archetype,
     corp: pick(CORPS, mulberry32(seed ?? Date.now())),
-    money: 40,
+    money: archetype.startMoney,
     deck: buildCodebase(),
     draw: [],
     discard: [],
@@ -127,6 +189,8 @@ export function newRun(seed?: number): RunState {
     rerollCost: 50,
     lastResult: null,
     lastCashout: null,
+    event: null,
+    eventHistory: [],
   };
   s.rng = mulberry32(s.seed);
   genWingOptions(s);
@@ -154,9 +218,9 @@ export function startBattle(s: RunState, optionIdx: number): void {
   s.protocol = opt.protocol;
   s.threshold = Math.round(opt.threshold * (s.corp.traitId === 'overheat' ? 0.9 : 1));
   s.roundScore = 0;
-  s.playsMax = playsCap(s);
+  s.playsMax = playsCap(s) + s.archetype.playsBonus;
   s.discardsMax = discardsCap(s) + (s.corp.traitId === 'intel' ? 1 : 0);
-  s.handSize = handCap(s);
+  s.handSize = handCap(s) + s.archetype.handBonus;
   s.playsLeft = s.playsMax;
   s.discardsLeft = opt.protocol === 'blackout' ? 0 : s.discardsMax;
   s.lastResult = null;
@@ -265,9 +329,10 @@ function rollOffers(s: RunState): void {
 export function buyImplant(s: RunState, id: string): boolean {
   if (s.phase !== 'shop' || s.implants.length >= 5) return false;
   const def = s.shopOffers.find((i) => i.id === id);
-  if (!def || s.money < def.cost) return false;
-  s.money -= def.cost;
-  s.implants.push(def);
+  const cost = shopPrice(s, def?.cost ?? Number.POSITIVE_INFINITY);
+  if (!def || s.money < cost) return false;
+  s.money -= cost;
+  s.implants.push({ ...def, cost });
   s.humanityLoss += def.humanity;
   s.shopOffers = s.shopOffers.filter((i) => i.id !== id);
   return true;
@@ -284,14 +349,18 @@ export function sellImplant(s: RunState, id: string): boolean {
 }
 
 export function reroll(s: RunState): boolean {
-  if (s.phase !== 'shop' || s.money < s.rerollCost) return false;
-  s.money -= s.rerollCost;
+  const cost = shopPrice(s, s.rerollCost);
+  if (s.phase !== 'shop' || s.money < cost) return false;
+  s.money -= cost;
   s.rerollCost += 10;
   rollOffers(s);
   return true;
 }
 
 export type PatchKind = keyof typeof PATCH_COSTS;
+
+export const shopPrice = (s: RunState, base: number): number =>
+  Math.max(10, base - s.archetype.shopDiscount);
 
 /** Apply one cheap, run-local program-library modification from the shop. */
 export function patchDeck(
@@ -319,7 +388,40 @@ export function patchDeck(
 
 export function shopContinue(s: RunState): void {
   if (s.phase !== 'shop') return;
+  s.event = pick(EVENTS, s.rng);
+  s.phase = 'event';
+}
+
+export function canResolveEvent(s: RunState, choiceId: string): boolean {
+  if (s.phase !== 'event' || !s.event) return false;
+  const choice = s.event.choices.find((c) => c.id === choiceId);
+  if (!choice) return false;
+  return s.money + (choice.effect.money ?? 0) >= 0;
+}
+
+function applyEventEffect(s: RunState, effect: EventDef['choices'][number]['effect']): void {
+  s.money = Math.max(0, s.money + (effect.money ?? 0));
+  s.humanityLoss = Math.max(0, s.humanityLoss + (effect.humanity ?? 0));
+  for (let i = 0; i < (effect.boostRandom ?? 0); i++) {
+    if (s.deck.length === 0) break;
+    const target = s.deck[Math.floor(s.rng() * s.deck.length)];
+    target.v = Math.min(10, target.v + 1);
+  }
+  for (let i = 0; i < (effect.removeRandom ?? 0); i++) {
+    if (s.deck.length <= PATCH_MIN_DECK_SIZE) break;
+    s.deck.splice(Math.floor(s.rng() * s.deck.length), 1);
+  }
+}
+
+export function resolveEvent(s: RunState, choiceId: string): boolean {
+  if (!canResolveEvent(s, choiceId)) return false;
+  const event = s.event!;
+  const choice = event.choices.find((c) => c.id === choiceId)!;
+  applyEventEffect(s, choice.effect);
+  s.eventHistory.push(`${event.id}:${choice.id}`);
+  s.event = null;
   s.wing++;
   s.phase = 'select';
   genWingOptions(s);
+  return true;
 }
