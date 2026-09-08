@@ -1,7 +1,7 @@
 // 对局状态机：一单委托 = 潜入一家企业，依次打穿 4 个区段。
 // 每个区段在三个候选节点里选一个下手（外围 / 中继 / 核心主机），
 // 击穿任意一个即进入黑市——结构与「每 ante 选一个盲注」同构，但语义全部重写。
-import { Program, buildCodebase } from './cards';
+import { DISCIPLINES, Program, buildCodebase } from './cards';
 import { Rng, mulberry32, pick, shuffled } from './rng';
 import { HookCtx, ImplantDef, IMPLANTS } from './cyberware';
 import { ScoreResult, scorePlay } from './scoring';
@@ -11,6 +11,7 @@ export type Phase = 'select' | 'battle' | 'shop' | 'event' | 'won' | 'lost';
 export type NodeKind = 'perimeter' | 'relay' | 'core';
 export type ProtocolId = 'ironwall' | 'blackout' | 'swarm';
 export type ArchetypeId = 'balanced' | 'ghost' | 'breaker' | 'broker';
+export type HandSortMode = 'value' | 'discipline';
 
 export interface ArchetypeDef {
   id: ArchetypeId;
@@ -251,6 +252,22 @@ export function canPlay(s: RunState, sel: number[]): boolean {
 
 export function canDiscard(s: RunState, sel: number[]): boolean {
   return s.phase === 'battle' && s.discardsLeft > 0 && sel.length >= 1;
+}
+
+/** Reorder only the visible hand; draw/discard order and deck ownership stay untouched. */
+export function sortHand(s: RunState, mode: HandSortMode): boolean {
+  if (s.phase !== 'battle' || s.hand.length < 2) return false;
+  const order = (d: Program['d']) => DISCIPLINES.indexOf(d);
+  s.hand = s.hand
+    .map((card, index) => ({ card, index }))
+    .sort((a, b) => {
+      if (mode === 'value' && a.card.v !== b.card.v) return b.card.v - a.card.v;
+      if (mode === 'discipline' && a.card.d !== b.card.d) return order(a.card.d) - order(b.card.d);
+      if (a.card.v !== b.card.v) return b.card.v - a.card.v;
+      return a.index - b.index;
+    })
+    .map(({ card }) => card);
+  return true;
 }
 
 function hookCtx(s: RunState, playedCount: number): HookCtx {

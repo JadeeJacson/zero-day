@@ -16,6 +16,7 @@ import {
   reroll,
   resolveEvent,
   sellImplant,
+  sortHand,
   shopContinue,
   startBattle,
 } from '../src/core/run';
@@ -116,6 +117,23 @@ describe('对局流程', () => {
     expect(s.playsLeft).toBe(3);
     expect(s.hand).toHaveLength(8);
     expect(s.discard).toHaveLength(2);
+  });
+
+  it('整理手牌：按强度降序或按纪律分组，且不改变牌库总量', () => {
+    const s = newRun(42);
+    startBattle(s, 0);
+    s.hand = [
+      mk('extract', 2),
+      mk('crack', 9),
+      mk('stealth', 4),
+      mk('crack', 3),
+    ];
+    const total = s.hand.length + s.draw.length + s.discard.length;
+    expect(sortHand(s, 'value')).toBe(true);
+    expect(s.hand.map((c) => c.v)).toEqual([9, 4, 3, 2]);
+    expect(sortHand(s, 'discipline')).toBe(true);
+    expect(s.hand.map((c) => c.d)).toEqual(['crack', 'crack', 'stealth', 'extract']);
+    expect(s.hand.length + s.draw.length + s.discard.length).toBe(total);
   });
 
   it('重编译：弃牌计数 -1 并补牌', () => {

@@ -5,6 +5,7 @@ import {
   ARCHETYPES,
   ArchetypeId,
   canResolveEvent,
+  HandSortMode,
   NODE_INFO,
   PATCH_COSTS,
   PROTOCOLS,
@@ -19,6 +20,7 @@ import {
   reroll,
   resolveEvent,
   sellImplant,
+  sortHand,
   shopPrice,
   shopContinue,
   startBattle,
@@ -157,7 +159,7 @@ function floatText(anchor: Element | null, text: string, cls: string): void {
 function cardHtml(p: Program, idx: number, selected: boolean): string {
   const info = DISCIPLINE_INFO[p.d];
   const delay = ((idx * 0.53) % 2.2).toFixed(2);
-  return `<div class="slot"><div class="card ${info.cls}${selected ? ' sel' : ''}" data-idx="${idx}" role="button" tabindex="0" aria-label="${info.zh} 强度 ${p.v}" style="animation-delay:-${delay}s">
+  return `<div class="slot"><div class="card ${info.cls}${selected ? ' sel' : ''}" data-idx="${idx}" role="button" tabindex="0" aria-pressed="${selected}" aria-label="${info.zh} 强度 ${p.v}" style="animation-delay:-${delay}s">
     <div class="wm">${info.glyph}</div>
     <div class="corner">${info.glyph}<span>${info.zh}</span></div>
     <div class="val mono">${p.v}</div>
@@ -437,6 +439,76 @@ function updatePreview(): void {
   setMsg(`<b>${r.techZh}</b>　预计穿透 ${fmt(r.final)}${hint}`);
 }
 
+function updateSelectionView(): void {
+  if (!s) return;
+  document.querySelectorAll<HTMLElement>('#hand .card').forEach((card) => {
+    const idx = Number(card.dataset.idx);
+    const selected = sel.includes(idx);
+    card.classList.toggle('sel', selected);
+    card.setAttribute('aria-pressed', String(selected));
+  });
+  const playButton = document.getElementById('btn-play') as HTMLButtonElement | null;
+  const discardButton = document.getElementById('btn-discard') as HTMLButtonElement | null;
+  if (playButton) playButton.disabled = !canPlay(s, sel);
+  if (discardButton) discardButton.disabled = !canDiscard(s, sel);
+  updatePreview();
+}
+
+function bindHandInteractions(): void {
+  const hand = document.getElementById('hand');
+  if (!hand) return;
+  hand.onclick = (e) => {
+    if (!s || busy) return;
+    const el = (e.target as HTMLElement).closest('.card') as HTMLElement | null;
+    if (!el) return;
+    const idx = Number(el.dataset.idx);
+    if (!Number.isInteger(idx) || !s.hand[idx]) return;
+    if (sel.includes(idx)) {
+      sel = sel.filter((i) => i !== idx);
+      sfx.unsel();
+    } else if (sel.length < 5) {
+      sel.push(idx);
+      sfx.select();
+    }
+    // 只更新选中态、按钮和预演面板，避免替换整张 screen 导致闪烁。
+    updateSelectionView();
+  };
+  hand.onkeydown = (e) => {
+    const event = e as KeyboardEvent;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const el = (event.target as HTMLElement).closest('.card') as HTMLElement | null;
+    if (!el || busy) return;
+    event.preventDefault();
+    el.click();
+  };
+}
+
+function renderHandOnly(): void {
+  if (!s) return;
+  const hand = document.getElementById('hand');
+  if (!hand) return;
+  hand.innerHTML = s.hand.map((c, i) => cardHtml(c, i, sel.includes(i))).join('');
+  bindHandInteractions();
+  updateSelectionView();
+}
+
+function bindHandSortControls(): void {
+  document.querySelectorAll<HTMLElement>('[data-sort-hand]').forEach((el) => {
+    el.onclick = () => {
+      if (!s || busy) return;
+      const selectedIds = new Set(sel.map((i) => s!.hand[i]?.id).filter(Boolean));
+      const mode = el.dataset.sortHand as HandSortMode;
+      if (!sortHand(s, mode)) return;
+      sel = s.hand.reduce<number[]>((indices, card, index) => {
+        if (selectedIds.has(card.id)) indices.push(index);
+        return indices;
+      }, []);
+      sfx.select();
+      renderHandOnly();
+    };
+  });
+}
+
 function renderBattle(): void {
   if (!s) return;
   const pct = Math.min(100, (s.roundScore / s.threshold) * 100);
@@ -473,6 +545,14 @@ function renderBattle(): void {
     ${implantsRow()}
     ${scoringPanelHtml()}
     <div class="playrow" id="playrow">${playRowHtml}</div>
+    <div class="hand-head">
+      <span class="hand-label">程序手牌 <span class="en">HAND</span></span>
+      <div class="hand-tools" aria-label="整理手牌">
+        <span class="hand-tools-label">整理</span>
+        <button class="btn mini" data-sort-hand="value" title="强度从高到低">强度 ↓</button>
+        <button class="btn mini" data-sort-hand="discipline" title="按纪律分组">纪律</button>
+      </div>
+    </div>
     <div class="hand" id="hand" aria-label="程序手牌">${s.hand.map((c, i) => cardHtml(c, i, sel.includes(i))).join('')}</div>
     <div class="actions">
       <button class="btn primary" id="btn-play" ${canPlay(s, sel) ? '' : 'disabled'}>攻击<span class="cnt">${s.playsLeft}/${s.playsMax}</span></button>
@@ -482,28 +562,8 @@ function renderBattle(): void {
     </div>
   </div>${techTableOpen ? techTableHtml() : ''}`;
 
-  document.getElementById('hand')!.addEventListener('click', (e) => {
-    if (!s || busy) return;
-    const el = (e.target as HTMLElement).closest('.card') as HTMLElement | null;
-    if (!el) return;
-    const idx = Number(el.dataset.idx);
-    if (sel.includes(idx)) {
-      sel = sel.filter((i) => i !== idx);
-      sfx.unsel();
-    } else if (sel.length < 5) {
-      sel.push(idx);
-      sfx.select();
-    }
-    render();
-  });
-  document.getElementById('hand')!.addEventListener('keydown', (e) => {
-    const event = e as KeyboardEvent;
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    const el = (event.target as HTMLElement).closest('.card') as HTMLElement | null;
-    if (!el || busy) return;
-    event.preventDefault();
-    el.click();
-  });
+  bindHandInteractions();
+  bindHandSortControls();
   document.getElementById('btn-play')!.onclick = () => void attack();
   document.getElementById('btn-discard')!.onclick = () => void doDiscard();
   document.getElementById('btn-tech')!.onclick = () => {
