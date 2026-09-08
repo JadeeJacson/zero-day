@@ -46,6 +46,8 @@ let playRow: Program[] = []; // 正在结算的程序（视图状态）
 let statsRecorded = false;
 let pokiLoadingReported = false;
 let pokiGameplayActive = false;
+type Language = 'zh' | 'en';
+let language: Language = readLanguage();
 
 interface PokiSdkLike {
   gameLoadingFinished?: () => void;
@@ -78,11 +80,66 @@ bg.id = 'bg';
 bg.innerHTML = '<div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div>';
 document.body.prepend(bg);
 
-const fmt = (n: number) => n.toLocaleString('zh-CN');
+const fmt = (n: number) => n.toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US');
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, fastAnimations ? Math.min(80, ms * 0.22) : ms));
 const TUTORIAL_KEY = 'zero-day-tutorial-v1';
 const STATS_KEY = 'zero-day-run-stats-v1';
 const RUN_SAVE_KEY = 'zero-day-run-v1';
+const LANGUAGE_KEY = 'zero-day-language-v1';
+
+function readLanguage(): Language {
+  try {
+    return localStorage.getItem('zero-day-language-v1') === 'en' ? 'en' : 'zh';
+  } catch {
+    return 'zh';
+  }
+}
+
+function setLanguage(next: Language): void {
+  language = next;
+  try {
+    localStorage.setItem(LANGUAGE_KEY, language);
+  } catch {
+    // 私密窗口可能禁用存储，当前会话仍可切换。
+  }
+  document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
+  document.body.dataset.lang = language;
+  render();
+}
+
+const t = (zh: string, en: string): string => (language === 'zh' ? zh : en);
+const localized = (item: { zh: string; en: string }): string => t(item.zh, item.en);
+const languageButton = (): string => `<button class="btn ghost" id="btn-language" aria-label="${t('切换语言', 'CHANGE LANGUAGE')}">${t('语言', 'LANG')}</button>`;
+
+function bindLanguage(): void {
+  document.getElementById('btn-language')?.addEventListener('click', () => setLanguage(language === 'zh' ? 'en' : 'zh'));
+}
+
+function implantName(def: ImplantDef): string {
+  return language === 'zh' ? def.zh : def.en;
+}
+
+function implantDesc(def: ImplantDef): string {
+  return language === 'zh' ? def.desc : def.descEn ?? def.desc;
+}
+
+function techniqueName(id: string): string {
+  const tech = TECHNIQUES.find((item) => item.id === id);
+  return tech ? localized(tech) : id;
+}
+
+function scoreEventLabel(ev: ScoreEvent): string {
+  if (ev.kind === 'tech') {
+    const tech = TECHNIQUES.find((item) => ev.label.startsWith(item.zh));
+    return language === 'zh' ? tech?.zh ?? ev.label.replace(/（[^）]*）/, '') : tech?.en ?? ev.label;
+  }
+  if (ev.kind === 'card') {
+    const value = ev.label.match(/\d+/)?.[0] ?? '';
+    return language === 'zh' ? `程序 · 强度 ${value}` : `Program · Strength ${value}`;
+  }
+  const implant = s?.implants.find((item) => ev.label.includes(item.zh));
+  return language === 'zh' ? implant?.zh ?? ev.label : implant?.en ?? ev.label;
+}
 
 interface RunStats {
   runs: number;
@@ -220,27 +277,27 @@ function floatText(anchor: Element | null, text: string, cls: string): void {
 function cardHtml(p: Program, idx: number, selected: boolean): string {
   const info = DISCIPLINE_INFO[p.d];
   const delay = ((idx * 0.53) % 2.2).toFixed(2);
-  return `<div class="slot"><div class="card ${info.cls}${selected ? ' sel' : ''}" data-idx="${idx}" role="button" tabindex="0" aria-pressed="${selected}" aria-label="${info.zh} 强度 ${p.v}" title="${info.zh} · 强度 ${p.v}" style="animation-delay:-${delay}s">
-    <div class="wm">${info.glyph}</div>
-    <div class="corner">${info.glyph}<span>${info.zh}</span></div>
-    <div class="card-sigil">${info.en.slice(0, 3).toUpperCase()}</div>
+  const discipline = language === 'zh' ? info.zh : info.en;
+  const glyph = language === 'zh' ? info.glyph : info.en.slice(0, 3).toUpperCase();
+  return `<div class="slot"><div class="card ${info.cls}${selected ? ' sel' : ''}" data-idx="${idx}" role="button" tabindex="0" aria-pressed="${selected}" aria-label="${discipline} ${t('强度', 'strength')} ${p.v}" title="${discipline} · ${p.v}" style="animation-delay:-${delay}s">
+    <div class="wm">${language === 'zh' ? info.glyph : info.en.slice(0, 1).toUpperCase()}</div>
+    <div class="corner">${glyph}<span>${discipline}</span></div>
     <div class="val mono">${p.v}</div>
-    <div class="tag en">${info.en.toUpperCase()}</div>
-    <div class="vcorner mono">${p.d.slice(0, 2).toUpperCase()}-${String(p.v).padStart(2, '0')}</div>
+    <div class="vcorner mono">${language === 'zh' ? `编号 ${String(p.v).padStart(2, '0')}` : `${p.d.slice(0, 2).toUpperCase()}-${String(p.v).padStart(2, '0')}`}</div>
   </div></div>`;
 }
 
 function tutorialHtml(): string {
   return `<div class="modal-mask tutorial-mask" id="tutorial-mask">
     <div class="modal tutorial-modal" role="dialog" aria-modal="true" aria-labelledby="tutorial-title">
-      <h3 id="tutorial-title">第一次潜入</h3>
+      <h3 id="tutorial-title">${t('第一次潜入', 'FIRST DIVE')}</h3>
       <div class="tutorial-grid">
-        <div><b>1 · 选节点</b><p>外围更安全，核心奖励更高，但会附带固执协议。</p></div>
-        <div><b>2 · 组手法</b><p>选 1–5 张程序。系统会从中自动取穿透最高的组合。</p></div>
-        <div><b>3 · 管资源</b><p>攻击消耗窗口，重编译换牌；黑市可以装义体或改造程序库。</p></div>
+        <div><b>${t('1 · 选节点', '1 · CHOOSE A NODE')}</b><p>${t('外围更安全，核心奖励更高，但会附带固执协议。', 'The perimeter is safer. The core pays more, but carries a Protocol.')}</p></div>
+        <div><b>${t('2 · 组手法', '2 · BUILD A TECHNIQUE')}</b><p>${t('选 1–5 张程序。系统会从中自动取穿透最高的组合。', 'Select 1–5 programs. The strongest valid combination resolves automatically.')}</p></div>
+        <div><b>${t('3 · 管资源', '3 · MANAGE RESOURCES')}</b><p>${t('攻击消耗窗口，重编译换牌；黑市可以装义体或改造程序库。', 'Attacks use windows. Recompile to redraw; the Black Market has implants and deck patches.')}</p></div>
       </div>
-      <p class="rule">建议先试一次“四象全谱”：四张不同纪律的程序，容易理解也很稳定。</p>
-      <div style="margin-top:16px;text-align:right"><button class="btn primary" id="btn-close-tutorial">开始</button></div>
+      <p class="rule">${t('建议先试一次“四象全谱”：四张不同纪律的程序，容易理解也很稳定。', 'Try Full Spectrum first: four different disciplines are easy to read and reliable.')}</p>
+      <div style="margin-top:16px;text-align:right"><button class="btn primary" id="btn-close-tutorial">${t('开始', 'START')}</button></div>
     </div>
   </div>`;
 }
@@ -248,19 +305,19 @@ function tutorialHtml(): string {
 function patchPanelHtml(): string {
   if (!s) return '';
   const cards = s.deck
-    .map((p, i) => `<option value="${i}">${String(i + 1).padStart(2, '0')} · ${DISCIPLINE_INFO[p.d].zh} ${p.v}</option>`)
+    .map((p, i) => `<option value="${i}">${String(i + 1).padStart(2, '0')} · ${localized(DISCIPLINE_INFO[p.d])} ${p.v}</option>`)
     .join('');
-  const disciplines = DISCIPLINES.map((d) => `<option value="${d}">${DISCIPLINE_INFO[d].zh}</option>`).join('');
+  const disciplines = DISCIPLINES.map((d) => `<option value="${d}">${localized(DISCIPLINE_INFO[d])}</option>`).join('');
   return `<div class="patch-panel">
-    <div class="patch-head"><span>程序工作台</span><span class="en">PROGRAM PATCH BAY</span><span class="patch-count">牌库 ${s.deck.length}/40</span></div>
+    <div class="patch-head"><span>${t('程序工作台', 'PROGRAM PATCH BAY')}</span><span class="patch-count">${t('牌库', 'DECK')} ${s.deck.length}/40</span></div>
     <div class="patch-controls">
-      <label>目标程序<select id="patch-card">${cards}</select></label>
-      <label>重写为<select id="patch-discipline">${disciplines}</select></label>
-      <button class="btn mini" data-patch="boost" ${s.money < PATCH_COSTS.boost ? 'disabled' : ''}>强化 +1 ¤${PATCH_COSTS.boost}</button>
-      <button class="btn mini" data-patch="rewrite" ${s.money < PATCH_COSTS.rewrite ? 'disabled' : ''}>重写纪律 ¤${PATCH_COSTS.rewrite}</button>
-      <button class="btn mini danger" data-patch="remove" ${s.money < PATCH_COSTS.remove ? 'disabled' : ''}>隔离程序 ¤${PATCH_COSTS.remove}</button>
+      <label>${t('目标程序', 'TARGET')}<select id="patch-card">${cards}</select></label>
+      <label>${t('重写为', 'REWRITE AS')}<select id="patch-discipline">${disciplines}</select></label>
+      <button class="btn mini" data-patch="boost" ${s.money < PATCH_COSTS.boost ? 'disabled' : ''}>${t('强化 +1', 'BOOST +1')} ¤${PATCH_COSTS.boost}</button>
+      <button class="btn mini" data-patch="rewrite" ${s.money < PATCH_COSTS.rewrite ? 'disabled' : ''}>${t('重写纪律', 'REWRITE')} ¤${PATCH_COSTS.rewrite}</button>
+      <button class="btn mini danger" data-patch="remove" ${s.money < PATCH_COSTS.remove ? 'disabled' : ''}>${t('隔离程序', 'ISOLATE')} ¤${PATCH_COSTS.remove}</button>
     </div>
-    <div class="patch-hint">改造会持续到本局结束；隔离至少保留 ${12} 张程序，避免牌库失去基本循环。</div>
+    <div class="patch-hint">${t('改造会持续到本局结束；隔离至少保留 12 张程序，避免牌库失去基本循环。', 'Patches last for this run. At least 12 programs must remain in the deck.')}</div>
   </div>`;
 }
 
@@ -268,33 +325,48 @@ function implantHtml(def: ImplantDef, mode: 'owned' | 'offer'): string {
   const displayCost = mode === 'offer' && s ? shopPrice(s, def.cost) : def.cost;
   const meta =
     mode === 'owned'
-      ? `<button class="btn mini danger" data-sell="${def.id}">卖出 ¤${sellPrice(def)}</button>`
-      : `<span class="shop-price">¤${displayCost}</span><button class="btn mini" data-buy="${def.id}">接入</button>`;
+      ? `<button class="btn mini danger" data-sell="${def.id}">${t('卖出', 'SELL')} ¤${sellPrice(def)}</button>`
+      : `<span class="shop-price">¤${displayCost}</span><button class="btn mini" data-buy="${def.id}">${t('接入', 'INSTALL')}</button>`;
+  const name = implantName(def);
+  const desc = implantDesc(def);
   return `<div class="implant" data-implant="${def.id}">
-    <div class="implant-name"><span class="badge">${def.zh[0]}</span>${def.zh} <span class="en">${def.en}</span></div>
-    <div class="implant-desc">${def.desc}</div>
-    <div class="implant-meta"><span class="humcost">人性 −${def.humanity}</span>${meta}</div>
+    <div class="implant-name"><span class="badge">${language === 'zh' ? def.zh[0] : def.en[0]}</span><span class="implant-title">${name}</span></div>
+    <div class="implant-desc">${desc}</div>
+    <div class="implant-meta"><span class="humcost">${language === 'zh' ? `人性 −${def.humanity}` : `HUM −${def.humanity}`}</span>${meta}</div>
   </div>`;
 }
 
 function header(): string {
   if (!s) return '';
+  const fortress = language === 'zh'
+    ? s.corp.fortress
+    : ({ 鸦巢: 'Crow Nest', 鲸腹: 'Whale Gut', 窑心: 'Kiln Core' } as Record<string, string>)[s.corp.fortress] ?? 'Data Fortress';
+  const corpTrait = language === 'zh'
+    ? { name: s.corp.traitZh, desc: s.corp.traitDesc }
+    : {
+        name: s.corp.traitId === 'intel' ? 'Intel Advantage' : s.corp.traitId === 'finance' ? 'Float Protocol' : 'Overheated Lines',
+        desc: s.corp.traitId === 'intel' ? '+1 discard each battle' : s.corp.traitId === 'finance' ? 'Interest cap raised to ¤50' : 'All node thresholds −10%',
+      };
+  const archetypeDesc = language === 'zh'
+    ? s.archetype.desc
+    : ({ balanced: 'No modifiers; ideal for learning.', ghost: '+1 hand size; less starting money.', breaker: '+1 attack window; less starting money.', broker: 'Implants and rerolls cost −¤10; more starting money.' } as Record<ArchetypeId, string>)[s.archetype.id];
   return `<div class="topbar">
-    <span class="logo">零日 <span class="en">ZERO-DAY</span></span>
-    <span>区段 <b>${s.wing + 1}</b>/4 · ${s.corp.zh}「${s.corp.fortress}」</span>
-    <span class="archetype-tag" title="${s.archetype.desc}">${s.archetype.zh}</span>
-    <span class="corp-trait" title="${s.corp.traitDesc}">${s.corp.traitZh}</span>
+    <span class="logo">${language === 'zh' ? '零日' : 'ZERO-DAY'}</span>
+    <span>${t('区段', 'WING')} <b>${s.wing + 1}</b>/4 · ${language === 'zh' ? `${s.corp.zh}「${fortress}」` : `${s.corp.en} “${fortress}”`}</span>
+    <span class="archetype-tag" title="${archetypeDesc}">${language === 'zh' ? s.archetype.zh : s.archetype.en}</span>
+    <span class="corp-trait" title="${corpTrait.desc}">${corpTrait.name}</span>
     <span class="money">¤ <b>${s.money}</b></span>
-    <span class="humtag">人性 −${s.humanityLoss}</span>
-    <span class="seed mono">seed ${s.seed}</span>
-    <button class="btn ghost" id="btn-speed">结算 ${fastAnimations ? '快' : '慢'}</button>
-    <button class="btn ghost" id="btn-mute">音效 ${sfx.muted ? '关' : '开'}</button>
+    <span class="humtag">${language === 'zh' ? `人性 −${s.humanityLoss}` : `HUM −${s.humanityLoss}`}</span>
+    <span class="seed mono">${language === 'zh' ? '种子' : 'SEED'} ${s.seed}</span>
+    <button class="btn ghost" id="btn-speed">${t('结算', 'SPEED')} ${fastAnimations ? t('快', 'FAST') : t('慢', 'SLOW')}</button>
+    <button class="btn ghost" id="btn-mute">${t('音效', 'SFX')} ${sfx.muted ? t('关', 'OFF') : t('开', 'ON')}</button>
+    ${languageButton()}
   </div>`;
 }
 
 function implantsRow(): string {
   if (!s) return '';
-  if (s.implants.length === 0) return `<div class="implants"><div class="implant-empty">义体槽空空如也——黑市里有二手货</div></div>`;
+  if (s.implants.length === 0) return `<div class="implants"><div class="implant-empty">${t('义体槽空空如也——黑市里有二手货', 'NO IMPLANTS INSTALLED — USED HARDWARE AHEAD')}</div></div>`;
   return `<div class="implants">${s.implants.map((i) => implantHtml(i, 'owned')).join('')}</div>`;
 }
 
@@ -303,24 +375,25 @@ function techTableHtml(): string {
     .sort((a, b) => b.rank - a.rank)
     .map(
       (t) => `<div class="tech-row">
-      <span class="tech-name">${t.zh} <span class="en">${t.en}</span></span>
-      <span class="tech-desc">${t.desc}</span>
+      <span class="tech-name">${localized(t)}</span>
+      <span class="tech-desc">${language === 'zh' ? t.desc : t.descEn ?? t.desc}</span>
       <span class="tech-val mono">${t.base} × ${t.eff}</span>
     </div>`,
     )
     .join('');
   return `<div class="modal-mask" id="modal-mask"><div class="modal">
-    <h3>手法表</h3>
-    <p class="rule">威力 = 手法基准 + Σ参与程序强度；穿透 = 威力 × 效率。<br>
-    攻击时自动从所选程序中枚举子集，取穿透最高的手法结算；同分取更稀有者。</p>
+    <h3>${t('手法表', 'TECHNIQUES')}</h3>
+    <p class="rule">${t('威力 = 手法基准 + Σ参与程序强度；穿透 = 威力 × 效率。<br>攻击时自动从所选程序中枚举子集，取穿透最高的手法结算；同分取更稀有者。', 'Power = base + sum of card strength; Pierce = Power × Efficiency.<br>The strongest valid subset resolves automatically; ties favor the rarer technique.')}</p>
     ${rows}
-    <div style="margin-top:16px;text-align:right"><button class="btn" id="btn-close-tech">关闭</button></div>
+    <div style="margin-top:16px;text-align:right"><button class="btn" id="btn-close-tech">${t('关闭', 'CLOSE')}</button></div>
   </div></div>`;
 }
 
 // ---------- 渲染 ----------
 
 function render(): void {
+  document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
+  document.body.dataset.lang = language;
   if (s && s.phase !== 'won' && s.phase !== 'lost') saveRun();
   if (!s) return renderTitle();
   switch (s.phase) {
@@ -343,28 +416,27 @@ function renderTitle(): void {
   const stats = readStats();
   const saved = loadRun();
   const archetypes = Object.values(ARCHETYPES)
-    .map((a) => `<option value="${a.id}">${a.zh} · ${a.desc}</option>`)
+    .map((a) => `<option value="${a.id}">${language === 'zh' ? a.zh : a.en} · ${language === 'zh' ? a.desc : ({ balanced: 'No modifiers; ideal for learning.', ghost: '+1 hand size; less starting money.', breaker: '+1 attack window; less starting money.', broker: 'Implants and rerolls cost −¤10; more starting money.' } as Record<ArchetypeId, string>)[a.id]}</option>`)
     .join('');
   app.innerHTML = `<div class="screen title-screen">
-    <div class="title-logo">零 日</div>
-    <div class="title-sub en">ZERO-DAY · A CARD ROGUELIKE</div>
+    <div class="title-logo">${language === 'zh' ? '零 日' : 'ZERO DAY'}</div>
+    <div class="title-sub">${language === 'zh' ? '零日 · 卡牌肉鸽' : 'A CARD ROGUELIKE'}</div>
     <div class="blurb">
-      雾屿城的雨下了三十年。掮客<i>「老蝉」</i>给你转来一单委托：<br>
-      潜进企业数据堡，把核心数据拽出来。你的全部本钱，<br>
-      是一套手搓程序库和几件二手义体。逐层击穿，见好就收——<br>
-      或者死在分期账单里。
+      ${t('雾屿城的雨下了三十年。掮客「老蝉」给你转来一单委托：<br>潜进企业数据堡，把核心数据拽出来。你的全部本钱，<br>是一套手搓程序库和几件二手义体。逐层击穿，见好就收——<br>或者死在分期账单里。', 'The rain has fallen on Mist Isle for thirty years. A broker called Old Cicada has a job:<br>break into a corporate data fortress and pull out its core. You have a hand-built<br>program library and some second-hand implants. Push deeper, cash out—or drown in debt.')}
     </div>
     <div class="title-loadout">
-      <label>潜袭者<select id="archetype-input">${archetypes}</select></label>
-      <label>挑战 seed <input id="seed-input" type="number" inputmode="numeric" placeholder="随机"></label>
+      <label>${t('潜袭者', 'RUNNER')}<select id="archetype-input">${archetypes}</select></label>
+      <label>${t('挑战种子', 'CHALLENGE SEED')} <input id="seed-input" type="number" inputmode="numeric" placeholder="${t('随机', 'RANDOM')}"></label>
     </div>
     <div class="title-actions">
-      <button class="btn primary" id="btn-start">开始潜入</button>
-      ${saved ? '<button class="btn" id="btn-continue">继续上次潜入</button>' : ''}
-      <button class="btn" id="btn-title-tech">手法表</button>
+      <button class="btn primary" id="btn-start">${t('开始潜入', 'START DIVE')}</button>
+      ${saved ? `<button class="btn" id="btn-continue">${t('继续上次潜入', 'CONTINUE RUN')}</button>` : ''}
+      <button class="btn" id="btn-title-tech">${t('手法表', 'TECHNIQUES')}</button>
+      ${languageButton()}
     </div>
-    <div class="title-stats">本机记录：${stats.runs} 局 · ${stats.wins} 次完成 · 最佳资产 ¤${stats.bestMoney} · 最远区段 ${stats.bestWing}/4</div>
+    <div class="title-stats">${language === 'zh' ? `本机记录：${stats.runs} 局 · ${stats.wins} 次完成 · 最佳资产 ¤${stats.bestMoney} · 最远区段 ${stats.bestWing}/4` : `LOCAL RECORDS: ${stats.runs} RUNS · ${stats.wins} CLEARS · BEST ¤${stats.bestMoney} · FARTHEST WING ${stats.bestWing}/4`}</div>
   </div>${techTableOpen ? techTableHtml() : ''}`;
+  bindLanguage();
   document.getElementById('btn-start')!.onclick = () => {
     const rawSeed = (document.getElementById('seed-input') as HTMLInputElement).value.trim();
     const parsedSeed = rawSeed === '' ? undefined : Number(rawSeed);
@@ -399,23 +471,24 @@ function renderSelect(): void {
       const info = NODE_INFO[o.kind];
       const visibleThreshold = Math.round(o.threshold * (s!.corp.traitId === 'overheat' ? 0.9 : 1));
       const proto = o.protocol
-        ? `<div class="protocol"><b>固执协议 · ${PROTOCOLS[o.protocol].zh}</b><br>${PROTOCOLS[o.protocol].desc}</div>`
+        ? `<div class="protocol"><b>${t('固执协议', 'PROTOCOL')} · ${language === 'zh' ? PROTOCOLS[o.protocol].zh : PROTOCOLS[o.protocol].en}</b><br>${language === 'zh' ? PROTOCOLS[o.protocol].desc : PROTOCOLS[o.protocol].descEn}</div>`
         : '';
-      return `<div class="nodecard k-${o.kind}" data-node="${i}" role="button" tabindex="0" aria-label="${info.zh}，需要 ${fmt(visibleThreshold)} 穿透，报酬 ${o.reward}">
-        <div class="node-name">${info.zh} <span class="en">${info.en}</span></div>
+      return `<div class="nodecard k-${o.kind}" data-node="${i}" role="button" tabindex="0" aria-label="${localized(info)}, ${t('需要', 'requires')} ${fmt(visibleThreshold)} ${t('穿透', 'pierce')}, ${t('报酬', 'reward')} ${o.reward}">
+        <div class="node-name">${localized(info)}</div>
         <div class="node-th mono">${fmt(visibleThreshold)}</div>
-        <div>击穿所需穿透</div>
-        <div class="node-reward">报酬 ¤${o.reward}</div>
+        <div>${t('击穿所需穿透', 'PIERCE REQUIRED')}</div>
+        <div class="node-reward">${t('报酬', 'REWARD')} ¤${o.reward}</div>
         ${proto}
       </div>`;
     })
     .join('');
   app.innerHTML = `<div class="screen">
     ${header()}
-    <div class="h2">选择下手节点 — 打穿任意一个即可深入 · ${s.corp.traitDesc}</div>
+    <div class="h2">${t('选择下手节点 — 打穿任意一个即可深入', 'CHOOSE A NODE — BREAK ONE TO GO DEEPER')} · ${language === 'zh' ? s.corp.traitDesc : 'Choose your risk and reward'}</div>
     <div class="nodes">${cards}</div>
     ${implantsRow()}
   </div>${tutorialOpen ? tutorialHtml() : ''}`;
+  bindLanguage();
   document.querySelectorAll('[data-node]').forEach((el) => {
     el.addEventListener('click', () => {
       if (!s || busy) return;
@@ -439,21 +512,22 @@ function renderEvent(): void {
   const choices = event.choices
     .map(
       (choice) => `<button class="event-choice" data-event-choice="${choice.id}" ${canResolveEvent(s!, choice.id) ? '' : 'disabled'}>
-        <span class="event-choice-title">${choice.title}</span>
-        <span class="event-choice-desc">${choice.desc}</span>
+        <span class="event-choice-title">${language === 'zh' ? choice.title : choice.titleEn ?? choice.title}</span>
+        <span class="event-choice-desc">${language === 'zh' ? choice.desc : choice.descEn ?? choice.desc}</span>
       </button>`,
     )
     .join('');
   app.innerHTML = `<div class="screen event-screen">
     ${header()}
-    <div class="event-kicker en">INTERCEPTED SIGNAL · ${event.en}</div>
+    <div class="event-kicker">${t('截获信号', 'INTERCEPTED SIGNAL')}${language === 'en' ? ` · ${event.en}` : ''}</div>
     <div class="event-card">
-      <div class="event-title">${event.title}</div>
-      <p class="event-text">${event.text}</p>
+      <div class="event-title">${language === 'zh' ? event.title : event.titleEn ?? event.title}</div>
+      <p class="event-text">${language === 'zh' ? event.text : event.textEn ?? event.text}</p>
       <div class="event-choices">${choices}</div>
     </div>
-    <div class="event-foot">区段间事件 · 选择会影响资金、人性或程序库 · 当前牌库 ${s.deck.length} 张</div>
+    <div class="event-foot">${t('区段间事件 · 选择会影响资金、人性或程序库 · 当前牌库', 'BETWEEN-WING EVENT · CHOICE AFFECTS MONEY, HUMANITY OR DECK · DECK')} ${s.deck.length}</div>
   </div>`;
+  bindLanguage();
   document.querySelectorAll('[data-event-choice]').forEach((el) => {
     el.addEventListener('click', () => {
       if (!s) return;
@@ -468,9 +542,9 @@ function renderEvent(): void {
 function scoringPanelHtml(): string {
   return `<div class="result" id="result">
     <div class="scoring">
-      <div class="pchip"><span>威力</span><b class="mono" id="pv">–</b></div>
+      <div class="pchip"><span>${t('威力', 'POWER')}</span><b class="mono" id="pv">–</b></div>
       <span class="x">×</span>
-      <div class="pchip mult"><span>效率</span><b class="mono" id="ev">–</b></div>
+      <div class="pchip mult"><span>${t('效率', 'EFFICIENCY')}</span><b class="mono" id="ev">–</b></div>
       <span class="x">=</span>
       <div class="pchip fin"><b class="mono" id="fv">–</b></div>
     </div>
@@ -497,21 +571,21 @@ function updatePreview(): void {
   if (sel.length === 0) {
     pv.textContent = ev.textContent = fv.textContent = '–';
     result.classList.remove('live');
-    setMsg('选 1–5 张程序，此处预演穿透');
+    setMsg(t('选 1–5 张程序，此处预演穿透', 'Select 1–5 programs to preview Pierce'));
     return;
   }
   const chosen = sel.map((i) => s!.hand[i]);
   const r = scorePlay(chosen, s.implants, previewCtx());
   result.classList.add('live');
   if (!r) {
-    setMsg('无法构成手法');
+    setMsg(t('无法构成手法', 'No valid technique'));
     return;
   }
   pv.textContent = fmt(r.power);
   ev.textContent = fmt(r.eff);
   fv.textContent = fmt(r.final);
-  const hint = r.cards.length < sel.length ? `<br><span style="opacity:.7">自动选取 ${r.cards.length} 张参与结算</span>` : '';
-  setMsg(`<b>${r.techZh}</b>　预计穿透 ${fmt(r.final)}${hint}`);
+  const hint = r.cards.length < sel.length ? `<br><span style="opacity:.7">${t(`自动选取 ${r.cards.length} 张参与结算`, `Auto-selecting ${r.cards.length} cards`)}</span>` : '';
+  setMsg(`<b>${techniqueName(r.techId)}</b>　${t('预计穿透', 'PIERCE')} ${fmt(r.final)}${hint}`);
 }
 
 function updateSelectionView(): void {
@@ -588,18 +662,18 @@ function renderBattle(): void {
   if (!s) return;
   const pct = Math.min(100, (s.roundScore / s.threshold) * 100);
   const proto = s.protocol
-    ? `<div class="protocol" style="margin-top:10px"><b>固执协议 · ${PROTOCOLS[s.protocol].zh}</b>　${PROTOCOLS[s.protocol].desc}</div>`
+    ? `<div class="protocol" style="margin-top:10px"><b>${t('固执协议', 'PROTOCOL')} · ${language === 'zh' ? PROTOCOLS[s.protocol].zh : PROTOCOLS[s.protocol].en}</b>　${language === 'zh' ? PROTOCOLS[s.protocol].desc : PROTOCOLS[s.protocol].descEn}</div>`
     : '';
   const playRowHtml = playRow
     .map((p) => {
       const info = DISCIPLINE_INFO[p.d];
+      const discipline = language === 'zh' ? info.zh : info.en;
+      const glyph = language === 'zh' ? info.glyph : info.en.slice(0, 3).toUpperCase();
       return `<div class="slot"><div class="card ${info.cls}" data-pid="${p.id}">
-      <div class="wm">${info.glyph}</div>
-      <div class="corner">${info.glyph}<span>${info.zh}</span></div>
-      <div class="card-sigil">${info.en.slice(0, 3).toUpperCase()}</div>
+      <div class="wm">${language === 'zh' ? info.glyph : info.en.slice(0, 1).toUpperCase()}</div>
+      <div class="corner">${glyph}<span>${discipline}</span></div>
       <div class="val mono">${p.v}</div>
-      <div class="tag en">${info.en.toUpperCase()}</div>
-      <div class="vcorner mono">${p.d.slice(0, 2).toUpperCase()}-${String(p.v).padStart(2, '0')}</div>
+      <div class="vcorner mono">${language === 'zh' ? `编号 ${String(p.v).padStart(2, '0')}` : `${p.d.slice(0, 2).toUpperCase()}-${String(p.v).padStart(2, '0')}`}</div>
     </div></div>`;
     })
     .join('');
@@ -607,14 +681,14 @@ function renderBattle(): void {
     ${header()}
     <div class="nodebar ${s.protocol ? 'boss' : ''}">
       <div class="nodebar-head">
-        <div class="node-name">${NODE_INFO[s.nodeKind!].zh} <span class="en">${NODE_INFO[s.nodeKind!].en}</span></div>
-        <div class="score-line"><b class="mono" id="score-num">${fmt(s.roundScore)}</b> / ${fmt(s.threshold)} 穿透</div>
+        <div class="node-name">${localized(NODE_INFO[s.nodeKind!])}</div>
+        <div class="score-line"><b class="mono" id="score-num">${fmt(s.roundScore)}</b> / ${fmt(s.threshold)} ${t('穿透', 'PIERCE')}</div>
       </div>
       <div class="progress"><div id="score-fill" style="width:${pct}%"></div></div>
       <div class="counters">
-        <span>攻击窗口 <b id="plays">${s.playsLeft}/${s.playsMax}</b></span>
-        <span>重编译 <b id="discards">${s.discardsLeft}</b></span>
-        <span>程序库 <b>${s.hand.length + s.draw.length + s.discard.length}</b></span>
+        <span>${t('攻击窗口', 'ATTACKS')} <b id="plays">${s.playsLeft}/${s.playsMax}</b></span>
+        <span>${t('重编译', 'DISCARDS')} <b id="discards">${s.discardsLeft}</b></span>
+        <span>${t('程序库', 'DECK')} <b>${s.hand.length + s.draw.length + s.discard.length}</b></span>
       </div>
       ${proto}
     </div>
@@ -622,24 +696,25 @@ function renderBattle(): void {
     ${scoringPanelHtml()}
     <div class="playrow" id="playrow">${playRowHtml}</div>
     <div class="hand-head">
-      <span class="hand-label">程序手牌 <span class="en">HAND</span></span>
-      <div class="hand-tools" aria-label="整理手牌">
-        <span class="hand-tools-label">整理</span>
-        <button class="btn mini${s.handSortMode === 'value' ? ' active' : ''}" data-sort-hand="value" title="强度从高到低">强度 ↓</button>
-        <button class="btn mini${s.handSortMode === 'discipline' ? ' active' : ''}" data-sort-hand="discipline" title="按纪律分组">纪律</button>
+      <span class="hand-label">${t('程序手牌', 'PROGRAM HAND')}</span>
+      <div class="hand-tools" aria-label="${t('整理手牌', 'SORT HAND')}">
+        <span class="hand-tools-label">${t('整理', 'SORT')}</span>
+        <button class="btn mini${s.handSortMode === 'value' ? ' active' : ''}" data-sort-hand="value" title="${t('强度从高到低', 'Highest strength first')}">${t('强度 ↓', 'POWER ↓')}</button>
+        <button class="btn mini${s.handSortMode === 'discipline' ? ' active' : ''}" data-sort-hand="discipline" title="${t('按纪律分组', 'Group by discipline')}">${t('纪律', 'TYPE')}</button>
       </div>
     </div>
-    <div class="hand" id="hand" aria-label="程序手牌">${s.hand.map((c, i) => cardHtml(c, i, sel.includes(i))).join('')}</div>
+    <div class="hand" id="hand" aria-label="${t('程序手牌', 'PROGRAM HAND')}">${s.hand.map((c, i) => cardHtml(c, i, sel.includes(i))).join('')}</div>
     <div class="actions">
-      <button class="btn primary" id="btn-play" ${canPlay(s, sel) ? '' : 'disabled'}>攻击<span class="cnt">${s.playsLeft}/${s.playsMax}</span></button>
-      <button class="btn" id="btn-discard" ${canDiscard(s, sel) ? '' : 'disabled'}>重编译<span class="cnt">${s.discardsLeft}</span></button>
+      <button class="btn primary" id="btn-play" ${canPlay(s, sel) ? '' : 'disabled'}>${t('攻击', 'ATTACK')}<span class="cnt">${s.playsLeft}/${s.playsMax}</span></button>
+      <button class="btn" id="btn-discard" ${canDiscard(s, sel) ? '' : 'disabled'}>${t('重编译', 'RECOMPILE')}<span class="cnt">${s.discardsLeft}</span></button>
       <span class="spacer"></span>
-      <button class="btn" id="btn-tech">手法表</button>
+      <button class="btn" id="btn-tech">${t('手法表', 'TECHNIQUES')}</button>
     </div>
   </div>${techTableOpen ? techTableHtml() : ''}`;
 
   bindHandInteractions();
   bindHandSortControls();
+  bindLanguage();
   document.getElementById('btn-play')!.onclick = () => void attack();
   document.getElementById('btn-discard')!.onclick = () => void doDiscard();
   document.getElementById('btn-tech')!.onclick = () => {
@@ -655,33 +730,34 @@ function renderShop(): void {
   const cash = s.lastCashout;
   const owned =
     s.implants.length === 0
-      ? `<div class="implant-empty">还没有义体</div>`
+      ? `<div class="implant-empty">${t('还没有义体', 'NO IMPLANTS')}</div>`
       : s.implants.map((i) => implantHtml(i, 'owned')).join('');
   const offers =
     s.shopOffers.length === 0
-      ? `<div class="sold-out">货架已空（本局义体池有限）</div>`
+      ? `<div class="sold-out">${t('货架已空（本局义体池有限）', 'SHELF EMPTY (LIMITED RUN POOL)')}</div>`
       : s.shopOffers.map((i) => implantHtml(i, 'offer')).join('');
-  app.innerHTML = `<div class="screen">
+  app.innerHTML = `<div class="screen shop-screen">
     ${header()}
     <div class="shop-banner">
-      击穿确认。赃款到账：<b>¤${cash?.reward ?? 0}</b>　利息 <b>¤${cash?.interest ?? 0}</b><br>
-      <span style="font-size:12px;opacity:.75">每 50 新元结余 +10 利息，上限 40 —— 攒钱也是一种策略</span>
+      ${t('击穿确认。赃款到账', 'BREACH CONFIRMED. PAYOUT')}：<b>¤${cash?.reward ?? 0}</b>　${t('利息', 'INTEREST')} <b>¤${cash?.interest ?? 0}</b><br>
+      <span style="font-size:12px;opacity:.75">${t('每 50 新元结余 +10 利息，上限 40 —— 攒钱也是一种策略', 'Every ¤50 held grants +10 interest, capped at ¤40 — saving is a strategy.')}</span>
     </div>
     ${patchPanelHtml()}
-    <div class="h2">已装载义体 — 人性损耗不可逆，卖出只退钱</div>
+    <div class="h2">${t('已装载义体 — 人性损耗不可逆，卖出只退钱', 'INSTALLED IMPLANTS — HUMANITY LOSS IS PERMANENT')}</div>
     <div class="implants">${owned}</div>
-    <div class="h2">黑市货架</div>
-    <div class="shop-grid"><div class="shop-row">${offers}</div>
+    <div class="h2">${t('黑市货架', 'BLACK MARKET')}</div>
+    <div class="shop-grid"><div class="shop-row shop-offers">${offers}</div>
       <div class="shop-row">
-        <div class="implant"><div class="implant-name"><span class="badge">掷</span>重掷货架</div>
-          <div class="implant-desc">换一批义体。费用每次 +10；掮客折扣同样生效。</div>
+        <div class="implant utility-card"><div class="implant-name"><span class="badge">${language === 'zh' ? '掷' : 'R'}</span><span class="implant-title">${t('重掷货架', 'REROLL SHELF')}</span></div>
+          <div class="implant-desc">${t('换一批义体。费用每次 +10；掮客折扣同样生效。', 'Refresh the implants. Cost rises by ¤10; Broker discount applies.')}</div>
           <div class="implant-meta"><span class="shop-price">¤${shopPrice(s, s.rerollCost)}</span>
-          <button class="btn mini" id="btn-reroll" ${s.money >= shopPrice(s, s.rerollCost) ? '' : 'disabled'}>重掷</button></div>
+          <button class="btn mini" id="btn-reroll" ${s.money >= shopPrice(s, s.rerollCost) ? '' : 'disabled'}>${t('重掷', 'REROLL')}</button></div>
         </div>
-        <button class="btn primary" id="btn-next" style="margin-top:auto">继续深入 ↓</button>
+        <button class="btn primary" id="btn-next" style="margin-top:auto">${t('继续深入 ↓', 'GO DEEPER ↓')}</button>
       </div>
     </div>
   </div>`;
+  bindLanguage();
   document.querySelectorAll('[data-buy]').forEach((el) => {
     el.addEventListener('click', () => {
       if (!s) return;
@@ -729,18 +805,20 @@ function renderEnd(): void {
   recordRun(s);
   const stats = readStats();
   app.innerHTML = `<div class="screen end-screen">
-    <div class="end-title ${won ? 'won' : 'lost'}">${won ? '全身而退' : '连接中断'}</div>
+    <div class="end-title ${won ? 'won' : 'lost'}">${won ? t('全身而退', 'CLEAN EXTRACTION') : t('连接中断', 'CONNECTION LOST')}</div>
     <div class="end-text">${
       won
-        ? '核心数据到手。断线上浮，你把火漆一样的反向追踪甩在数据堡的残骸里。<br>雨还在下，霓虹在水洼里碎掉。老蝉的分成到账——这单，成了。'
-        : '反向追踪锁定了你的接入点。权限被吊销，义体被远程锁死，<br>而欠掮客的那笔账，才刚刚开始计息。'
+        ? t('核心数据到手。断线上浮，你把火漆一样的反向追踪甩在数据堡的残骸里。<br>雨还在下，霓虹在水洼里碎掉。老蝉的分成到账——这单，成了。', 'The core data is yours. You cut the line and leave the countertrace buried in the fortress wreckage.<br>The rain keeps falling. Old Cicada sends your cut — this job is clean.')
+        : t('反向追踪锁定了你的接入点。权限被吊销，义体被远程锁死，<br>而欠掮客的那笔账，才刚刚开始计息。', 'The countertrace found your access point. Credentials revoked, implants locked remotely,<br>and the broker debt has only started accruing.')
     }</div>
     <div class="end-stats">
-      最终资产 <b>¤${s.money}</b> ｜ 人性损耗 <b>−${s.humanityLoss}</b> ｜ 到达区段 <b>${s.wing + 1}/4</b> ｜ seed <b>${s.seed}</b><br>
-      ${s.archetype.zh} · 事件选择 ${s.eventHistory.length} 次 · 本机胜率 ${stats.wins}/${stats.runs}
+      ${t('最终资产', 'FINAL ASSETS')} <b>¤${s.money}</b> ｜ ${t('人性损耗', 'HUMANITY')} <b>−${s.humanityLoss}</b> ｜ ${t('到达区段', 'WING')} <b>${s.wing + 1}/4</b> ｜ ${t('种子', 'SEED')} <b>${s.seed}</b><br>
+      ${language === 'zh' ? s.archetype.zh : s.archetype.en} · ${t('事件选择', 'EVENTS')} ${s.eventHistory.length} · ${t('本机胜率', 'LOCAL WINS')} ${stats.wins}/${stats.runs}
     </div>
-    <button class="btn primary" id="btn-restart">再潜一次</button>
+    <button class="btn primary" id="btn-restart">${t('再潜一次', 'DIVE AGAIN')}</button>
+    ${languageButton()}
   </div>`;
+  bindLanguage();
   document.getElementById('btn-restart')!.onclick = () => {
     s = null;
     sel = [];
@@ -817,7 +895,7 @@ async function attack(): Promise<void> {
   fillNow.style.width = `${Math.min(100, (before / s.threshold) * 100)}%`;
   const resultBox = document.getElementById('result')!;
   resultBox.classList.add('live');
-  setMsg(`<b>${result.techZh}</b>　结算中…`);
+  setMsg(`<b>${techniqueName(result.techId)}</b>　${t('结算中…', 'RESOLVING…')}`);
 
   // FLIP：从手牌原位滑入出牌区
   const fresh = Array.from(document.querySelectorAll('#playrow .card')) as HTMLElement[];
@@ -869,13 +947,13 @@ async function attack(): Promise<void> {
     }
     if (ev.power) {
       chip(pv, ev.powerTotal);
-      floatText(anchor, `+${ev.power} 威力`, 'pow');
+      floatText(anchor, t(`+${ev.power} 威力`, `+${ev.power} POWER`), 'pow');
     }
     if (ev.eff) {
       chip(evEl, ev.effTotal);
-      floatText(anchor, `+${ev.eff} 效率`, 'eff');
+      floatText(anchor, t(`+${ev.eff} 效率`, `+${ev.eff} EFF`), 'eff');
     }
-    setMsg(`<b>${ev.label}</b>`);
+    setMsg(`<b>${scoreEventLabel(ev)}</b>`);
     await sleep(250);
   }
 
@@ -886,7 +964,7 @@ async function attack(): Promise<void> {
   fv.classList.add('slam');
   sfx.slam();
   shake();
-  setMsg(`<b>${result.techZh}</b>　穿透 <b style="color:var(--green)">${fmt(result.final)}</b>`);
+  setMsg(`<b>${techniqueName(result.techId)}</b>　${t('穿透', 'PIERCE')} <b style="color:var(--green)">${fmt(result.final)}</b>`);
   await sleep(500);
 
   // 入账 + 节点判定
@@ -901,12 +979,12 @@ async function attack(): Promise<void> {
   if (destroyed) {
     sfx.destroy();
     shake(true);
-    setMsg(`<b style="color:var(--green)">节点击穿！</b>`);
+    setMsg(`<b style="color:var(--green)">${t('节点击穿！', 'NODE BREACHED!')}</b>`);
   } else if (s.phase === 'lost') {
     sfx.hurt();
-    setMsg(`<b style="color:var(--red)">反向追踪完成——连接中断</b>`);
+    setMsg(`<b style="color:var(--red)">${t('反向追踪完成——连接中断', 'COUNTERTRACE COMPLETE — CONNECTION LOST')}</b>`);
   } else {
-    setMsg(`剩余攻击窗口 ${s.playsLeft}`);
+    setMsg(`${t('剩余攻击窗口', 'ATTACKS LEFT')} ${s.playsLeft}`);
   }
   await sleep(destroyed ? 850 : 600);
 
@@ -941,15 +1019,15 @@ async function doDiscard(): Promise<void> {
 // ---------- 音效开关（顶栏重渲染不丢） ----------
 
 document.addEventListener('click', (e) => {
-  const t = (e.target as HTMLElement).closest('#btn-mute');
-  if (t) {
+  const muteButton = (e.target as HTMLElement).closest('#btn-mute');
+  if (muteButton) {
     sfx.toggle();
-    t.textContent = `音效 ${sfx.muted ? '关' : '开'}`;
+    muteButton.textContent = `${t('音效', 'SFX')} ${sfx.muted ? t('关', 'OFF') : t('开', 'ON')}`;
   }
   const speed = (e.target as HTMLElement).closest('#btn-speed');
   if (speed) {
     fastAnimations = !fastAnimations;
-    speed.textContent = `结算 ${fastAnimations ? '快' : '慢'}`;
+    speed.textContent = `${t('结算', 'SPEED')} ${fastAnimations ? t('快', 'FAST') : t('慢', 'SLOW')}`;
   }
 });
 

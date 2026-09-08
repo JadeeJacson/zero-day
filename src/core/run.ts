@@ -68,10 +68,10 @@ export const ARCHETYPES: Record<ArchetypeId, ArchetypeDef> = {
   },
 };
 
-export const PROTOCOLS: Record<ProtocolId, { zh: string; en: string; desc: string }> = {
-  ironwall: { zh: '铁幕协议', en: 'Iron Wall', desc: '核心主机阈值额外 ×1.25' },
-  blackout: { zh: '静默封锁', en: 'Blackout', desc: '本战无法重编译' },
-  swarm: { zh: '蜂群协议', en: 'Swarm', desc: '每次攻击后随机熔断 1 张手牌' },
+export const PROTOCOLS: Record<ProtocolId, { zh: string; en: string; desc: string; descEn: string }> = {
+  ironwall: { zh: '铁幕协议', en: 'Iron Wall', desc: '核心主机阈值额外 ×1.25', descEn: 'Core Host threshold is ×1.25' },
+  blackout: { zh: '静默封锁', en: 'Blackout', desc: '本战无法重编译', descEn: 'Discards are disabled this battle' },
+  swarm: { zh: '蜂群协议', en: 'Swarm', desc: '每次攻击后随机熔断 1 张手牌', descEn: 'After each attack, burn 1 random hand card' },
 };
 
 export const NODE_INFO: Record<NodeKind, { zh: string; en: string; mult: number }> = {
