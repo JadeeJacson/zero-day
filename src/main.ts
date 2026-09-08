@@ -343,13 +343,14 @@ function implantHtml(def: ImplantDef, mode: 'owned' | 'offer'): string {
       : `<span class="shop-price">¤${displayCost}</span><button class="btn mini" data-buy="${def.id}">${t('接入', 'INSTALL')}</button>`;
   const name = implantName(def);
   const desc = implantDesc(def);
+  const ownedClass = mode === 'owned' ? ' implant-owned' : '';
   const ownedAttrs = mode === 'owned'
-    ? ` implant-owned tabindex="0" title="${desc}" aria-label="${name}：${desc}"`
+    ? ` tabindex="0" title="${desc}" aria-label="${name}：${desc}"`
     : '';
   const tooltip = mode === 'owned'
     ? `<div class="implant-tooltip" role="tooltip"><span>${t('能力', 'ABILITY')}</span>${desc}</div>`
     : '';
-  return `<div class="implant${ownedAttrs}" data-implant="${def.id}">
+  return `<div class="implant${ownedClass}"${ownedAttrs} data-implant="${def.id}">
     <div class="implant-name"><span class="badge">${language === 'zh' ? def.zh[0] : def.en[0]}</span><span class="implant-title">${name}</span></div>
     <div class="implant-desc">${desc}</div>
     <div class="implant-meta"><span class="humcost">${language === 'zh' ? `人性 −${def.humanity}` : `HUM −${def.humanity}`}</span>${meta}</div>
@@ -1097,5 +1098,3 @@ if (import.meta.env.DEV) {
   };
 }
 
-render();
-pokiLoadingFinished();
