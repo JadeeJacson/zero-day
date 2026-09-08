@@ -385,6 +385,9 @@ body::after {
 .shop-banner b { font-size: 18px; text-shadow: 0 0 12px rgba(52, 211, 153, 0.4); }
 .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .shop-row { display: flex; flex-direction: column; gap: 12px; }
+.shop-row > .implant { width: 100%; min-width: 0; }
+.shop-row .implant-name { min-width: 0; flex-wrap: wrap; row-gap: 3px; }
+.shop-row .implant-name .en { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shop-price { color: var(--amber); font-size: 14px; }
 .sold-out { color: var(--dim); font-size: 12px; padding: 14px; border: 1px dashed var(--line); border-radius: 10px; text-align: center; }
 
@@ -510,6 +513,8 @@ body.shake-big #app { animation: shakeB 0.5s ease; }
   .event-card { padding: 20px; }
   .event-title { font-size: 24px; }
   .event-choices { grid-template-columns: 1fr; }
+  .shop-row .implant-name .en { flex-basis: 100%; margin-left: 34px; }
+  .shop-row .implant-desc { min-height: 0; max-height: 36px; overflow: hidden; }
   .title-loadout { flex-direction: column; align-items: stretch; max-width: 320px; }
   .title-loadout select, .title-loadout input { width: 100%; }
   .archetype-tag { order: 4; }
