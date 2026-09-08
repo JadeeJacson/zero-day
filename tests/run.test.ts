@@ -7,6 +7,7 @@ import {
   discardCards,
   interestOf,
   newRun,
+  patchDeck,
   play,
   reroll,
   sellImplant,
@@ -30,6 +31,24 @@ describe('对局流程', () => {
     expect(s.options).toHaveLength(3);
     expect(s.money).toBe(40);
     expect(s.wing).toBe(0);
+    expect(s.deck).toHaveLength(40);
+  });
+
+  it('程序工作台：强化、重写、隔离会持续到下一场战斗', () => {
+    const s = newRun(42);
+    s.phase = 'shop';
+    s.money = 200;
+    const original = s.deck[0];
+    const originalValue = original.v;
+    expect(patchDeck(s, 'boost', 0)).toBe(true);
+    expect(s.deck[0].v).toBe(originalValue + 1);
+    expect(patchDeck(s, 'rewrite', 0, 'extract')).toBe(true);
+    expect(s.deck[0].d).toBe('extract');
+    const before = s.deck.length;
+    expect(patchDeck(s, 'remove', 0)).toBe(true);
+    expect(s.deck).toHaveLength(before - 1);
+    startBattle(s, 0);
+    expect(s.draw.length + s.hand.length).toBe(before - 1);
   });
 
   it('候选节点阈值 = 区段基值 × 节点倍率，核心主机带固执协议', () => {
@@ -121,7 +140,19 @@ describe('对局流程', () => {
     expect(s.phase).toBe('select');
     startBattle(s, 0);
     expect(s.playsLeft).toBe(3); // 4 - 1
-    expect(s.discardsLeft).toBe(3); // 未达 30
+    expect(s.discardsLeft).toBe(3); // 未达 22
+  });
+
+  it('人性阶梯：22 与 27 也可分别触发重编译与手牌惩罚', () => {
+    const s = newRun(42);
+    s.humanityLoss = 22;
+    startBattle(s, 0);
+    expect(s.playsLeft).toBe(3);
+    expect(s.discardsLeft).toBe(2);
+    s.humanityLoss = 27;
+    startBattle(s, 0);
+    expect(s.handSize).toBe(6);
+    expect(s.hand).toHaveLength(6);
   });
 
   it('卖出义体：返半价，人性损耗不退还', () => {

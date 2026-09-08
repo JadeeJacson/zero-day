@@ -1,8 +1,9 @@
 import './style.css';
-import { DISCIPLINE_INFO, Program } from './core/cards';
+import { DISCIPLINES, DISCIPLINE_INFO, Program } from './core/cards';
 import { HookCtx, ImplantDef, sellPrice } from './core/cyberware';
 import {
   NODE_INFO,
+  PATCH_COSTS,
   PROTOCOLS,
   RunState,
   buyImplant,
@@ -11,6 +12,7 @@ import {
   discardCards,
   newRun,
   play,
+  patchDeck,
   reroll,
   sellImplant,
   shopContinue,
@@ -25,6 +27,7 @@ let s: RunState | null = null;
 let sel: number[] = [];
 let busy = false;
 let techTableOpen = false;
+let tutorialOpen = false;
 let playRow: Program[] = []; // 正在结算的程序（视图状态）
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -37,6 +40,23 @@ document.body.prepend(bg);
 
 const fmt = (n: number) => n.toLocaleString('zh-CN');
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const TUTORIAL_KEY = 'zero-day-tutorial-v1';
+
+function tutorialSeen(): boolean {
+  try {
+    return localStorage.getItem(TUTORIAL_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function rememberTutorial(): void {
+  try {
+    localStorage.setItem(TUTORIAL_KEY, '1');
+  } catch {
+    // Private browsing can deny storage; the tutorial still closes for this run.
+  }
+}
 
 function previewCtx(): HookCtx {
   return {
@@ -94,13 +114,47 @@ function floatText(anchor: Element | null, text: string, cls: string): void {
 function cardHtml(p: Program, idx: number, selected: boolean): string {
   const info = DISCIPLINE_INFO[p.d];
   const delay = ((idx * 0.53) % 2.2).toFixed(2);
-  return `<div class="slot"><div class="card ${info.cls}${selected ? ' sel' : ''}" data-idx="${idx}" style="animation-delay:-${delay}s">
+  return `<div class="slot"><div class="card ${info.cls}${selected ? ' sel' : ''}" data-idx="${idx}" role="button" tabindex="0" aria-label="${info.zh} 强度 ${p.v}" style="animation-delay:-${delay}s">
     <div class="wm">${info.glyph}</div>
     <div class="corner">${info.glyph}<span>${info.zh}</span></div>
     <div class="val mono">${p.v}</div>
     <div class="tag en">${info.en.toUpperCase()}</div>
     <div class="vcorner mono">${p.d.slice(0, 2).toUpperCase()}-${String(p.v).padStart(2, '0')}</div>
   </div></div>`;
+}
+
+function tutorialHtml(): string {
+  return `<div class="modal-mask tutorial-mask" id="tutorial-mask">
+    <div class="modal tutorial-modal" role="dialog" aria-modal="true" aria-labelledby="tutorial-title">
+      <h3 id="tutorial-title">第一次潜入</h3>
+      <div class="tutorial-grid">
+        <div><b>1 · 选节点</b><p>外围更安全，核心奖励更高，但会附带固执协议。</p></div>
+        <div><b>2 · 组手法</b><p>选 1–5 张程序。系统会从中自动取穿透最高的组合。</p></div>
+        <div><b>3 · 管资源</b><p>攻击消耗窗口，重编译换牌；黑市可以装义体或改造程序库。</p></div>
+      </div>
+      <p class="rule">建议先试一次“四象全谱”：四张不同纪律的程序，容易理解也很稳定。</p>
+      <div style="margin-top:16px;text-align:right"><button class="btn primary" id="btn-close-tutorial">开始</button></div>
+    </div>
+  </div>`;
+}
+
+function patchPanelHtml(): string {
+  if (!s) return '';
+  const cards = s.deck
+    .map((p, i) => `<option value="${i}">${String(i + 1).padStart(2, '0')} · ${DISCIPLINE_INFO[p.d].zh} ${p.v}</option>`)
+    .join('');
+  const disciplines = DISCIPLINES.map((d) => `<option value="${d}">${DISCIPLINE_INFO[d].zh}</option>`).join('');
+  return `<div class="patch-panel">
+    <div class="patch-head"><span>程序工作台</span><span class="en">PROGRAM PATCH BAY</span><span class="patch-count">牌库 ${s.deck.length}/40</span></div>
+    <div class="patch-controls">
+      <label>目标程序<select id="patch-card">${cards}</select></label>
+      <label>重写为<select id="patch-discipline">${disciplines}</select></label>
+      <button class="btn mini" data-patch="boost" ${s.money < PATCH_COSTS.boost ? 'disabled' : ''}>强化 +1 ¤${PATCH_COSTS.boost}</button>
+      <button class="btn mini" data-patch="rewrite" ${s.money < PATCH_COSTS.rewrite ? 'disabled' : ''}>重写纪律 ¤${PATCH_COSTS.rewrite}</button>
+      <button class="btn mini danger" data-patch="remove" ${s.money < PATCH_COSTS.remove ? 'disabled' : ''}>隔离程序 ¤${PATCH_COSTS.remove}</button>
+    </div>
+    <div class="patch-hint">改造会持续到本局结束；隔离至少保留 ${12} 张程序，避免牌库失去基本循环。</div>
+  </div>`;
 }
 
 function implantHtml(def: ImplantDef, mode: 'owned' | 'offer'): string {
@@ -188,6 +242,7 @@ function renderTitle(): void {
   </div>${techTableOpen ? techTableHtml() : ''}`;
   document.getElementById('btn-start')!.onclick = () => {
     s = newRun();
+    tutorialOpen = !tutorialSeen();
     render();
   };
   document.getElementById('btn-title-tech')!.onclick = () => {
@@ -206,7 +261,7 @@ function renderSelect(): void {
       const proto = o.protocol
         ? `<div class="protocol"><b>固执协议 · ${PROTOCOLS[o.protocol].zh}</b><br>${PROTOCOLS[o.protocol].desc}</div>`
         : '';
-      return `<div class="nodecard k-${o.kind}" data-node="${i}">
+      return `<div class="nodecard k-${o.kind}" data-node="${i}" role="button" tabindex="0" aria-label="${info.zh}，需要 ${fmt(o.threshold)} 穿透，报酬 ${o.reward}">
         <div class="node-name">${info.zh} <span class="en">${info.en}</span></div>
         <div class="node-th mono">${fmt(o.threshold)}</div>
         <div>击穿所需穿透</div>
@@ -220,7 +275,7 @@ function renderSelect(): void {
     <div class="h2">选择下手节点 — 打穿任意一个即可深入</div>
     <div class="nodes">${cards}</div>
     ${implantsRow()}
-  </div>`;
+  </div>${tutorialOpen ? tutorialHtml() : ''}`;
   document.querySelectorAll('[data-node]').forEach((el) => {
     el.addEventListener('click', () => {
       if (!s || busy) return;
@@ -228,7 +283,14 @@ function renderSelect(): void {
       startBattle(s, Number((el as HTMLElement).dataset.node));
       render();
     });
+    el.addEventListener('keydown', (event) => {
+      const keyboard = event as KeyboardEvent;
+      if (keyboard.key !== 'Enter' && keyboard.key !== ' ') return;
+      keyboard.preventDefault();
+      (el as HTMLElement).click();
+    });
   });
+  bindTutorial();
 }
 
 function scoringPanelHtml(): string {
@@ -316,7 +378,7 @@ function renderBattle(): void {
     ${implantsRow()}
     ${scoringPanelHtml()}
     <div class="playrow" id="playrow">${playRowHtml}</div>
-    <div class="hand" id="hand">${s.hand.map((c, i) => cardHtml(c, i, sel.includes(i))).join('')}</div>
+    <div class="hand" id="hand" aria-label="程序手牌">${s.hand.map((c, i) => cardHtml(c, i, sel.includes(i))).join('')}</div>
     <div class="actions">
       <button class="btn primary" id="btn-play" ${canPlay(s, sel) ? '' : 'disabled'}>攻击<span class="cnt">${s.playsLeft}/${s.playsMax}</span></button>
       <button class="btn" id="btn-discard" ${canDiscard(s, sel) ? '' : 'disabled'}>重编译<span class="cnt">${s.discardsLeft}</span></button>
@@ -338,6 +400,14 @@ function renderBattle(): void {
       sfx.select();
     }
     render();
+  });
+  document.getElementById('hand')!.addEventListener('keydown', (e) => {
+    const event = e as KeyboardEvent;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const el = (event.target as HTMLElement).closest('.card') as HTMLElement | null;
+    if (!el || busy) return;
+    event.preventDefault();
+    el.click();
   });
   document.getElementById('btn-play')!.onclick = () => void attack();
   document.getElementById('btn-discard')!.onclick = () => void doDiscard();
@@ -366,6 +436,7 @@ function renderShop(): void {
       击穿确认。赃款到账：<b>¤${cash?.reward ?? 0}</b>　利息 <b>¤${cash?.interest ?? 0}</b><br>
       <span style="font-size:12px;opacity:.75">每 50 新元结余 +10 利息，上限 40 —— 攒钱也是一种策略</span>
     </div>
+    ${patchPanelHtml()}
     <div class="h2">已装载义体 — 人性损耗不可逆，卖出只退钱</div>
     <div class="implants">${owned}</div>
     <div class="h2">黑市货架</div>
@@ -385,6 +456,18 @@ function renderShop(): void {
       if (!s) return;
       if (buyImplant(s, (el as HTMLElement).dataset.buy!)) sfx.buy();
       render();
+    });
+  });
+  document.querySelectorAll('[data-patch]').forEach((el) => {
+    el.addEventListener('click', () => {
+      if (!s) return;
+      const cardSelect = document.getElementById('patch-card') as HTMLSelectElement | null;
+      const disciplineSelect = document.getElementById('patch-discipline') as HTMLSelectElement | null;
+      const kind = (el as HTMLElement).dataset.patch as 'boost' | 'rewrite' | 'remove';
+      if (cardSelect && patchDeck(s, kind, Number(cardSelect.value), disciplineSelect?.value as Program['d'] | undefined)) {
+        sfx.buy();
+        render();
+      }
     });
   });
   document.querySelectorAll('[data-sell]').forEach((el) => {
@@ -442,6 +525,16 @@ function bindModal(): void {
     techTableOpen = false;
     render();
   };
+}
+
+function bindTutorial(): void {
+  const close = document.getElementById('btn-close-tutorial');
+  if (!close) return;
+  close.addEventListener('click', () => {
+    tutorialOpen = false;
+    rememberTutorial();
+    render();
+  });
 }
 
 // ---------- 攻击结算动画 ----------

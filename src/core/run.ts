@@ -56,6 +56,8 @@ export interface RunState {
   wing: number; // 0..3
   corp: (typeof CORPS)[number];
   money: number;
+  /** Persistent program library for this run. Battle decks are shuffled from this array. */
+  deck: Program[];
   draw: Program[];
   discard: Program[];
   hand: Program[];
@@ -79,8 +81,13 @@ export interface RunState {
 }
 
 // 人性损耗阶梯（向桌游的 Humanity Cost 机制致意，阈值为原创）：
-// 15 → 攻击窗口 -1；30 → 重编译 -1；45 → 手牌上限 -2
-export const HUMANITY_STEPS = { plays: 15, discards: 30, hand: 45 };
+// 15 → 攻击窗口 -1；22 → 重编译 -1；27 → 手牌上限 -2
+// Five implants can currently add at most 29 humanity loss, so every step must
+// be reachable while still making the last slot meaningfully dangerous.
+export const HUMANITY_STEPS = { plays: 15, discards: 22, hand: 27 };
+
+export const PATCH_COSTS = { boost: 30, rewrite: 40, remove: 50 } as const;
+export const PATCH_MIN_DECK_SIZE = 12;
 
 export const playsCap = (s: RunState) => Math.max(2, 4 - (s.humanityLoss >= HUMANITY_STEPS.plays ? 1 : 0));
 export const discardsCap = (s: RunState) => Math.max(1, 3 - (s.humanityLoss >= HUMANITY_STEPS.discards ? 1 : 0));
@@ -96,6 +103,7 @@ export function newRun(seed?: number): RunState {
     wing: 0,
     corp: pick(CORPS, mulberry32(seed ?? Date.now())),
     money: 40,
+    deck: buildCodebase(),
     draw: [],
     discard: [],
     hand: [],
@@ -149,7 +157,9 @@ export function startBattle(s: RunState, optionIdx: number): void {
   s.playsLeft = s.playsMax;
   s.discardsLeft = opt.protocol === 'blackout' ? 0 : s.discardsMax;
   s.lastResult = null;
-  s.draw = shuffled(buildCodebase(), s.rng);
+  // The deck is persistent within a run: shop patches finally give the player
+  // a way to pursue a hand/build instead of relying only on random draws.
+  s.draw = shuffled(s.deck, s.rng);
   s.discard = [];
   s.hand = [];
   drawTo(s, s.handSize);
@@ -275,6 +285,32 @@ export function reroll(s: RunState): boolean {
   s.money -= s.rerollCost;
   s.rerollCost += 10;
   rollOffers(s);
+  return true;
+}
+
+export type PatchKind = keyof typeof PATCH_COSTS;
+
+/** Apply one cheap, run-local program-library modification from the shop. */
+export function patchDeck(
+  s: RunState,
+  kind: PatchKind,
+  targetIndex: number,
+  discipline?: Program['d'],
+): boolean {
+  if (s.phase !== 'shop' || s.money < PATCH_COSTS[kind]) return false;
+  if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= s.deck.length) return false;
+  const target = s.deck[targetIndex];
+  if (kind === 'boost') {
+    if (target.v >= 10) return false;
+    target.v += 1;
+  } else if (kind === 'rewrite') {
+    if (!discipline || target.d === discipline) return false;
+    target.d = discipline;
+  } else {
+    if (s.deck.length <= PATCH_MIN_DECK_SIZE) return false;
+    s.deck.splice(targetIndex, 1);
+  }
+  s.money -= PATCH_COSTS[kind];
   return true;
 }
 
